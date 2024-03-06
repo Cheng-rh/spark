@@ -48,9 +48,16 @@ class Main {
    * character. On Windows, the output is a command line suitable for direct execution from the
    * script.
    */
+  /**
+   * spark-class 脚本入口
+   * @param argsArray spark-submit.sh 输入参数
+   * @throws Exception
+   */
   public static void main(String[] argsArray) throws Exception {
     checkArgument(argsArray.length > 0, "Not enough arguments: missing class name.");
 
+    //1.获取第一个参数（org.apache.spark.deploy.SparkSubmit）
+    //根据类名判断是SparkSubmitCommandBuilder 还是SparkClassCommandBuilder
     List<String> args = new ArrayList<>(Arrays.asList(argsArray));
     String className = args.remove(0);
 
@@ -87,9 +94,7 @@ class Main {
       cmd = buildCommand(builder, env, printLaunchCommand);
     }
 
-    // test for shell environments, to enable non-Windows treatment of command line prep
-    boolean shellflag = !isEmpty(System.getenv("SHELL"));
-    if (isWindows() && !shellflag) {
+    if (isWindows()) {
       System.out.println(prepareWindowsCommand(cmd, env));
     } else {
       // A sequence of NULL character and newline separates command-strings and others.
@@ -98,7 +103,7 @@ class Main {
       // In bash, use NULL as the arg separator since it cannot be used in an argument.
       List<String> bashCmd = prepareBashCommand(cmd, env);
       for (String c : bashCmd) {
-        System.out.print(c.replaceFirst("\r$",""));
+        System.out.print(c);
         System.out.print('\0');
       }
     }
