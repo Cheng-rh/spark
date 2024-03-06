@@ -48,6 +48,11 @@ class Main {
    * character. On Windows, the output is a command line suitable for direct execution from the
    * script.
    */
+  /**
+   * spark-class 脚本入口
+   * @param argsArray spark-submit.sh 输入参数
+   * @throws Exception
+   */
   public static void main(String[] argsArray) throws Exception {
     checkArgument(argsArray.length > 0, "Not enough arguments: missing class name.");
 
