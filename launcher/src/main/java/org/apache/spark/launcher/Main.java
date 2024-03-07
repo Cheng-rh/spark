@@ -51,6 +51,7 @@ class Main {
   /**
    * spark-class 脚本入口
    * @param argsArray spark-submit.sh 输入参数
+   * org.apache.spark.deploy.SparkSubmit --class org.apache.spark.examples.SparkPi --master yarn ...
    * @throws Exception
    */
   public static void main(String[] argsArray) throws Exception {
@@ -64,9 +65,12 @@ class Main {
     boolean printLaunchCommand = !isEmpty(System.getenv("SPARK_PRINT_LAUNCH_COMMAND"));
     Map<String, String> env = new HashMap<>();
     List<String> cmd;
+    // 如果org.apache.spark.deploy.SparkSubmit，则初始化org.apache.spark.deploy.SparkSubmit
     if (className.equals("org.apache.spark.deploy.SparkSubmit")) {
       try {
+        // 初始化 SparkSubmitCommandBuilder
         AbstractCommandBuilder builder = new SparkSubmitCommandBuilder(args);
+        // 构造cmd命令
         cmd = buildCommand(builder, env, printLaunchCommand);
       } catch (IllegalArgumentException e) {
         printLaunchCommand = false;
@@ -117,6 +121,7 @@ class Main {
       AbstractCommandBuilder builder,
       Map<String, String> env,
       boolean printLaunchCommand) throws IOException, IllegalArgumentException {
+    // 调用 SparkSubmitCommandBuilder 构造相应的参数
     List<String> cmd = builder.buildCommand(env);
     if (printLaunchCommand) {
       System.err.println("Spark Command: " + join(" ", cmd));

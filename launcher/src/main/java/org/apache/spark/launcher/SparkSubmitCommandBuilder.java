@@ -118,6 +118,7 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
   /**
    * This constructor is used when invoking spark-submit; it parses and validates arguments
    * provided by the user on the command line.
+   * @param args --class org.apache.spark.examples.SparkPi --master yarn
    */
   SparkSubmitCommandBuilder(List<String> args) {
     this.allowsMixedArguments = false;
@@ -126,6 +127,7 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
     List<String> submitArgs = args;
     this.userArgs = Collections.emptyList();
 
+    // 根据第一个参数类型，初始化相应的submitArgs
     if (args.size() > 0) {
       switch (args.get(0)) {
         case PYSPARK_SHELL:
@@ -147,7 +149,9 @@ class SparkSubmitCommandBuilder extends AbstractCommandBuilder {
       }
 
       this.isExample = isExample;
+      // 初始化参数解析器
       OptionParser parser = new OptionParser(true);
+      // 解析参数，并回填SparkSubmitCommandBuilder及父类AbstractCommandBuilder的成员变量
       parser.parse(submitArgs);
       this.isSpecialCommand = parser.isSpecialCommand;
     } else {

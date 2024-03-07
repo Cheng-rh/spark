@@ -91,7 +91,10 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
     if (verbose) {
       logInfo(s"Using properties file: $propertiesFile")
     }
+
+    // 遍历配置文件
     Option(propertiesFile).foreach { filename =>
+      // 从配置文件中加载参数properties，并合入到defaultProperties，
       val properties = Utils.getPropertiesFromFile(filename)
       properties.foreach { case (k, v) =>
         defaultProperties(k) = v
@@ -107,17 +110,21 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
   }
 
   // Set parameters from command line arguments
+  // 解析参数，并回填给SparkSubmitArguments的成员变量
   parse(args.asJava)
 
   // Populate `sparkProperties` map from properties file
+  // 合并默认配置文件中的参数到sparkProperties中
   mergeDefaultSparkProperties()
   // Remove keys that don't start with "spark." from `sparkProperties`.
+  // 去除不是以“spark.”开头的配置项
   ignoreNonSparkProperties()
   // Use `sparkProperties` map along with env vars to fill in any missing parameters
+  // 加载必要的配置参数，优先级：输入参数 > spark-default.conf > sys.env
   loadEnvironmentArguments()
 
   useRest = sparkProperties.getOrElse("spark.master.rest.enabled", "false").toBoolean
-
+  // 根据不同的action，校验相应的参数是否正确
   validateArguments()
 
   /**
@@ -125,9 +132,10 @@ private[deploy] class SparkSubmitArguments(args: Seq[String], env: Map[String, S
    * When this is called, `sparkProperties` is already filled with configs from the latter.
    */
   private def mergeDefaultSparkProperties(): Unit = {
-    // Use common defaults file, if not specified by user
+    // 加载spark-default.conf配置文件
     propertiesFile = Option(propertiesFile).getOrElse(Utils.getDefaultPropertiesFile(env))
-    // Honor --conf before the defaults file
+    // 惰性成员变量defaultSparkProperties
+    // 将配置文件中的变量合并到sparkProperties中，优先级：输入参数 > spark-default.conf
     defaultSparkProperties.foreach { case (k, v) =>
       if (!sparkProperties.contains(k)) {
         sparkProperties(k) = v

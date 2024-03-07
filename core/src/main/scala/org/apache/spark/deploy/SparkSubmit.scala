@@ -70,11 +70,13 @@ private[spark] class SparkSubmit extends Logging {
     // Initialize logging if it hasn't been done yet. Keep track of whether logging needs to
     // be reset before the application starts.
     val uninitLog = initializeLogIfNecessary(true, silent = true)
-
+    // 解析参数（输入参数+配置文件+sys.env()）
     val appArgs = parseArguments(args)
     if (appArgs.verbose) {
       logInfo(appArgs.toString)
     }
+
+    // 根据action执行对应的方法
     appArgs.action match {
       case SparkSubmitAction.SUBMIT => submit(appArgs, uninitLog)
       case SparkSubmitAction.KILL => kill(appArgs)
@@ -919,6 +921,7 @@ private[spark] class SparkSubmit extends Logging {
    * running cluster deploy mode or python applications.
    */
   private def runMain(args: SparkSubmitArguments, uninitLog: Boolean): Unit = {
+    // 准备好spark submit 的环境（提交类的className（）, 参数，classPath，sparkConf）
     val (childArgs, childClasspath, sparkConf, childMainClass) = prepareSubmitEnvironment(args)
     // Let the main class re-initialize the logging system once it starts.
     if (uninitLog) {

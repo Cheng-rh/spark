@@ -136,26 +136,30 @@ class SparkSubmitOptionParser {
    * Parse a list of spark-submit command line options.
    * <p>
    * See SparkSubmitArguments.scala for a more formal description of available options.
-   *
+   * @param args --class org.apache.spark.examples.SparkPi --master yarn --conf spark.driver.memory=1G
    * @throws IllegalArgumentException If an error is found during parsing.
    */
   protected final void parse(List<String> args) {
+    // 正则表达式
     Pattern eqSeparatedOpt = Pattern.compile("(--[^=]+)=(.+)");
 
     int idx = 0;
+    // 参数列表循环
     for (idx = 0; idx < args.size(); idx++) {
       String arg = args.get(idx);
       String value = null;
 
+      //正则匹配
       Matcher m = eqSeparatedOpt.matcher(arg);
       if (m.matches()) {
         arg = m.group(1);
         value = m.group(2);
       }
 
-      // Look for options with a value.
+      // 获取参数名
       String name = findCliOption(arg, opts);
       if (name != null) {
+        // 如果value为空，说明value应该是下一个元素
         if (value == null) {
           if (idx == args.size() - 1) {
             throw new IllegalArgumentException(
@@ -164,6 +168,8 @@ class SparkSubmitOptionParser {
           idx++;
           value = args.get(idx);
         }
+
+        // 回调SparkSubmitCommandBuilder，及分类的成员变量
         if (!handle(name, value)) {
           break;
         }
@@ -187,6 +193,8 @@ class SparkSubmitOptionParser {
     if (idx < args.size()) {
       idx++;
     }
+
+    //处理额外的参数
     handleExtraArgs(args.subList(idx, args.size()));
   }
 
