@@ -51,6 +51,7 @@ public class ChildFirstURLClassLoader extends MutableURLClassLoader {
 
   @Override
   public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+    // 加载资源时，优先加载自己管理的jar包，如果找不到，再使用父类加载器加载。
     try {
       return super.loadClass(name, resolve);
     } catch (ClassNotFoundException cnf) {

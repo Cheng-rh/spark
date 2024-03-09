@@ -221,11 +221,19 @@ private[spark] class SparkSubmit extends Logging {
    *
    * Exposed for testing.
    */
+
+  /**
+   * 准备提交环境
+   * 主类SparkApplication、主类参数、classPath、SparkConf
+   * @param args shell脚本输入参数
+   * @param conf hadoop conf
+   * @return
+   */
   private[deploy] def prepareSubmitEnvironment(
       args: SparkSubmitArguments,
       conf: Option[HadoopConfiguration] = None)
       : (Seq[String], Seq[String], SparkConf, String) = {
-    // Return values
+    // 返回值初始化
     val childArgs = new ArrayBuffer[String]()
     val childClasspath = new ArrayBuffer[String]()
     val sparkConf = args.toSparkConf()
@@ -354,12 +362,13 @@ private[spark] class SparkSubmit extends Logging {
       }
     }
 
-    // update spark config from args
+    // 从脚本输入参数中更新sparkconf (优先级：输入参数 > spark-default.conf > sys.env)
     args.toSparkConf(Option(sparkConf))
     val hadoopConf = conf.getOrElse(SparkHadoopUtil.newConfiguration(sparkConf))
+    // 在本地构造临时文件
     val targetDir = Utils.createTempDir()
 
-    // Kerberos is not supported in standalone mode
+    // UGI login：
     if (clusterManager != STANDALONE
         && args.principal != null
         && args.keytab != null) {
@@ -375,6 +384,8 @@ private[spark] class SparkSubmit extends Logging {
     }
 
     // Resolve glob path for different resources.
+    // 为不同的资源解析全局路径
+    // (--jars > spark.jars)、（--file > spark.files）、(--archive > spark.archive)
     args.jars = Option(args.jars).map(resolveGlobPaths(_, hadoopConf)).orNull
     args.files = Option(args.files).map(resolveGlobPaths(_, hadoopConf)).orNull
     args.pyFiles = Option(args.pyFiles).map(resolveGlobPaths(_, hadoopConf)).orNull
@@ -382,10 +393,12 @@ private[spark] class SparkSubmit extends Logging {
 
 
     // In client mode, download remote files.
+    // 客户端模式，需要将远程文件下载到本地临时目录中
     var localPrimaryResource: String = null
     var localJars: String = null
     var localPyFiles: String = null
     if (deployMode == CLIENT) {
+      // shell脚本中主类所在的jar包
       localPrimaryResource = Option(args.primaryResource).map {
         downloadFile(_, targetDir, sparkConf, hadoopConf)
       }.orNull
@@ -457,6 +470,9 @@ private[spark] class SparkSubmit extends Logging {
     // We will download them to local disk prior to add to YARN's distributed cache.
     // For yarn client mode, since we already download them with above code, so we only need to
     // figure out the local path and replace the remote one.
+    // 如果提交模式为yarn, 则满足两个条件，会将资源下载到本地的
+    // 1.如果文件scheme为local,file则不需要下载
+    // 2.如果是"spark.yarn.dist.forceDownloadSchemes"配置则需要下载
     if (clusterManager == YARN) {
       val forceDownloadSchemes = sparkConf.get(FORCE_DOWNLOAD_SCHEMES)
 
@@ -497,6 +513,7 @@ private[spark] class SparkSubmit extends Logging {
 
     // At this point, we have attempted to download all remote resources.
     // Now we try to resolve the main class if our primary resource is a JAR.
+    // 尝试从主类jar包中，解析出主类
     if (args.mainClass == null && !args.isPython && !args.isR) {
       try {
         val uri = new URI(
@@ -690,6 +707,7 @@ private[spark] class SparkSubmit extends Logging {
     // In client mode, launch the application main class directly
     // In addition, add the main application jar and any added jars (if any) to the classpath
     if (deployMode == CLIENT) {
+      // 如果是yarn-client模式，childMainClass则为输入脚本中制定的主类
       childMainClass = args.mainClass
       if (localPrimaryResource != null && isUserJar(localPrimaryResource)) {
         childClasspath += localPrimaryResource
@@ -701,6 +719,7 @@ private[spark] class SparkSubmit extends Logging {
     // This assumes both primaryResource and user jars are local jars, or already downloaded
     // to local by configuring "spark.yarn.dist.forceDownloadSchemes", otherwise it will not be
     // added to the classpath of YARN client.
+    // yarn-cluster模式，需要将主类jar包、--jar or spark.jars的包添加到classPath中。
     if (isYarnCluster) {
       if (isUserJar(args.primaryResource)) {
         childClasspath += args.primaryResource
@@ -708,6 +727,7 @@ private[spark] class SparkSubmit extends Logging {
       if (args.jars != null) { childClasspath ++= args.jars.split(",") }
     }
 
+    // 如果是yarn-client模式，则将脚本输入参数添加到args.childArgs中
     if (deployMode == CLIENT) {
       if (args.childArgs != null) { childArgs ++= args.childArgs }
     }
@@ -776,7 +796,9 @@ private[spark] class SparkSubmit extends Logging {
     }
 
     // In yarn-cluster mode, use yarn.Client as a wrapper around the user class
+    // yarn-cluster模式，指定SparkApplication为YarnClusterApplication
     if (isYarnCluster) {
+      //如果是yarn-cluster，则主类为"org.apache.spark.deploy.yarn.YarnClusterApplication"
       childMainClass = YARN_CLUSTER_SUBMIT_CLASS
       if (args.isPython) {
         childArgs += "--primary-py-file" += args.primaryResource
@@ -786,6 +808,7 @@ private[spark] class SparkSubmit extends Logging {
         childArgs += "--primary-r-file" += mainFile
         childArgs += "--class" += "org.apache.spark.deploy.RRunner"
       } else {
+        // 将--jar,--class对应的内容追加到childArgs中
         if (args.primaryResource != SparkLauncher.NO_RESOURCE) {
           childArgs += "--jar" += args.primaryResource
         }
@@ -825,6 +848,7 @@ private[spark] class SparkSubmit extends Logging {
     }
 
     // Load any properties specified through --conf and the default properties file
+    // 将脚本输入参数，回填到sparkconf中
     for ((k, v) <- args.sparkProperties) {
       sparkConf.setIfMissing(k, v)
     }
@@ -881,7 +905,7 @@ private[spark] class SparkSubmit extends Logging {
         s"in Cluster mode when ${ALLOW_CUSTOM_CLASSPATH_BY_PROXY_USER_IN_CLUSTER_MODE.key} is " +
         s"disabled")
     }
-
+    // 返回回填参数
     (childArgs.toSeq, childClasspath.toSeq, sparkConf, childMainClass)
   }
 
@@ -895,6 +919,13 @@ private[spark] class SparkSubmit extends Logging {
     sparkConf.set(key, shortUserName)
   }
 
+  /**
+   * 获取类加载器
+   * spark.driver.userClassPathFirst，如果为true 则获取的是用户优先的类加载，其会破坏双清委派的机制
+   * 如果为fase，则传统的类加载器，遵循双亲委派的原则
+   * @param sparkConf
+   * @return
+   */
   private def getSubmitClassLoader(sparkConf: SparkConf): MutableURLClassLoader = {
     val loader =
       if (sparkConf.get(DRIVER_USER_CLASS_PATH_FIRST)) {
@@ -920,6 +951,13 @@ private[spark] class SparkSubmit extends Logging {
    * Note that this main class will not be the one provided by the user if we're
    * running cluster deploy mode or python applications.
    */
+
+  /**
+   * 初始化SparkApplication并运行
+   * 主类（YarnClusterApplication | JavaMainApplication）、classPath、参数、sparkConf
+   * @param args 脚本输入参数
+   * @param uninitLog 是否启用日志
+   */
   private def runMain(args: SparkSubmitArguments, uninitLog: Boolean): Unit = {
     // 准备好spark submit 的环境（提交类的className（）, 参数，classPath，sparkConf）
     val (childArgs, childClasspath, sparkConf, childMainClass) = prepareSubmitEnvironment(args)
@@ -940,13 +978,15 @@ private[spark] class SparkSubmit extends Logging {
       sparkConf.get(ALLOW_CUSTOM_CLASSPATH_BY_PROXY_USER_IN_CLUSTER_MODE),
       s"Classpath of spark-submit should not change in cluster mode if proxy user is specified " +
         s"when ${ALLOW_CUSTOM_CLASSPATH_BY_PROXY_USER_IN_CLUSTER_MODE.key} is disabled")
+
+    // 获取类加载器，并加载所依赖的jar包
     val loader = getSubmitClassLoader(sparkConf)
     for (jar <- childClasspath) {
       addJarToClasspath(jar, loader)
     }
 
+    // 类加载查找主类
     var mainClass: Class[_] = null
-
     try {
       mainClass = Utils.classForName(childMainClass)
     } catch {
@@ -970,6 +1010,7 @@ private[spark] class SparkSubmit extends Logging {
         throw new SparkUserAppException(CLASS_NOT_FOUND_EXIT_STATUS)
     }
 
+    // 如果是SparkApplication的子类，则直接初始化，否则使用JavaMainApplication包装
     val app: SparkApplication = if (classOf[SparkApplication].isAssignableFrom(mainClass)) {
       mainClass.getConstructor().newInstance().asInstanceOf[SparkApplication]
     } else {
@@ -987,6 +1028,7 @@ private[spark] class SparkSubmit extends Logging {
     }
 
     try {
+      // 启动SparkApplication
       app.start(childArgs.toArray, sparkConf)
     } catch {
       case t: Throwable =>

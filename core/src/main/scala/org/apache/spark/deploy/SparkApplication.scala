@@ -39,6 +39,7 @@ private[spark] trait SparkApplication {
 private[deploy] class JavaMainApplication(klass: Class[_]) extends SparkApplication {
 
   override def start(args: Array[String], conf: SparkConf): Unit = {
+    // 反射获取main方法，并执行
     val mainMethod = klass.getMethod("main", new Array[String](0).getClass)
     if (!Modifier.isStatic(mainMethod.getModifiers)) {
       throw new IllegalStateException("The main method in the given main class must be static")

@@ -1800,6 +1800,7 @@ private[spark] class YarnClusterApplication extends SparkApplication {
     conf.remove(FILES)
     conf.remove(ARCHIVES)
 
+    // new Client客户端，并进行run
     new Client(new ClientArguments(args), conf, null).run()
   }
 
