@@ -71,8 +71,9 @@ private[spark] class Client(
   extends Logging {
 
   import Client._
-
+  //初始化yarn客户端
   private val yarnClient = YarnClient.createYarnClient
+  //初始化hadoopConf
   private val hadoopConf = new YarnConfiguration(SparkHadoopUtil.newConfiguration(sparkConf))
 
   private val isClusterMode = sparkConf.get(SUBMIT_DEPLOY_MODE) == "cluster"
@@ -91,6 +92,9 @@ private[spark] class Client(
   }
 
   // AM related configurations
+  // AM的内存，cpu取决于depload模式
+  // 如果是cluster模式，cpu，memory分别由"spark.driver.cores"， "spark.driver.memory"决定
+  // 否则的话，cpu，memory分别由"spark.yarn.am.cores","spark.yarn.am.memory" 决定
   private val amMemory = if (isClusterMode) {
     sparkConf.get(DRIVER_MEMORY).toInt
   } else {
@@ -125,6 +129,7 @@ private[spark] class Client(
     0
   }
 
+  //初始化分布式缓冲管理器
   private val distCacheMgr = new ClientDistributedCacheManager()
   private val cachedResourcesConf = new SparkConf(false)
 
@@ -186,7 +191,10 @@ private[spark] class Client(
     ResourceRequestHelper.validateResources(sparkConf)
 
     try {
+      // 启动连接客户端，发送SparkApp的执行情况
       launcherBackend.connect()
+
+      // 初始化yarn客户端
       yarnClient.init(hadoopConf)
       yarnClient.start()
 
@@ -196,6 +204,7 @@ private[spark] class Client(
       }
 
       // Get a new application from our RM
+      // 获取new application ID
       val newApp = yarnClient.createApplication()
       val newAppResponse = newApp.getNewApplicationResponse()
       this.appId = newAppResponse.getApplicationId()
@@ -203,6 +212,7 @@ private[spark] class Client(
       // The app staging dir based on the STAGING_DIR configuration if configured
       // otherwise based on the users home directory.
       // scalastyle:off FileSystemGet
+      // 初始化App Stage目录
       val appStagingBaseDir = sparkConf.get(STAGING_DIR)
         .map { new Path(_, UserGroupInformation.getCurrentUser.getShortUserName) }
         .getOrElse(FileSystem.get(hadoopConf).getHomeDirectory())
@@ -216,7 +226,9 @@ private[spark] class Client(
       verifyClusterResources(newAppResponse)
 
       // Set up the appropriate contexts to launch our AM
+      // 初始化 yarn container 启动的上下文
       val containerContext = createContainerLaunchContext()
+      // 初始化 Application 提交的上下文
       val appContext = createApplicationSubmissionContext(newApp, containerContext)
 
       // Finally, submit and monitor the application
@@ -949,6 +961,7 @@ private[spark] class Client(
       pySparkArchives: Seq[String]): HashMap[String, String] = {
     logInfo("Setting up the launch environment for our AM container")
     val env = new HashMap[String, String]()
+    //准备ClassPath
     populateClasspath(args, hadoopConf, sparkConf, env, sparkConf.get(DRIVER_CLASS_PATH))
     env("SPARK_YARN_STAGING_DIR") = stagingDirPath.toString
     env("SPARK_USER") = UserGroupInformation.getCurrentUser().getShortUserName()
@@ -1018,8 +1031,9 @@ private[spark] class Client(
       } else {
         Nil
       }
-
+    // 初始化Container的启动环境
     val launchEnv = setupLaunchEnv(stagingDirPath, pySparkArchives)
+    // 初始化Container依赖的资源
     val localResources = prepareLocalResources(stagingDirPath, pySparkArchives)
 
     val amContainer = Records.newRecord(classOf[ContainerLaunchContext])
@@ -1351,8 +1365,13 @@ private[spark] class Client(
    * throw an appropriate SparkException.
    */
   def run(): Unit = {
+    // 提交APP
     submitApplication()
+
+    // 监控APP的执行情况
+    // 如果后台连接没有建立，且"spark.yarn.submit.waitAppCompletion"为true，不需要等待Application完成
     if (!launcherBackend.isConnected() && fireAndForget) {
+      // 获取APP的执行状态，并输出日志
       val report = getApplicationReport()
       val state = report.getYarnApplicationState
       logInfo(s"Application report for $appId (state: $state)")
@@ -1490,6 +1509,7 @@ private[spark] object Client extends Logging {
       sparkConf: SparkConf,
       env: HashMap[String, String],
       extraClassPath: Option[String] = None): Unit = {
+    // 将"spark.driver.extraClassPath"配置的classPath，追加到ClassPath中
     extraClassPath.foreach { cp =>
       addClasspathEntry(getClusterPath(sparkConf, cp), env)
     }

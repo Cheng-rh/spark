@@ -31,11 +31,12 @@ private[spark] class ClientArguments(args: Array[String]) extends Logging {
   var userArgs: ArrayBuffer[String] = new ArrayBuffer[String]()
   var verbose: Boolean = false
 
+  // 解析参数
   parseArgs(args.toList)
 
   private def parseArgs(inputArgs: List[String]): Unit = {
     var args = inputArgs
-
+    // 回填ClientArguments的成员变量:--jar、--class、--arg、eg
     while (!args.isEmpty) {
       args match {
         case ("--jar") :: value :: tail =>
