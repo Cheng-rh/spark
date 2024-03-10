@@ -134,6 +134,8 @@ private[spark] class Client(
   private val cachedResourcesConf = new SparkConf(false)
 
   private val keytab = sparkConf.get(KEYTAB).orNull
+
+  //如果是clster模式，且keytab不为空，则获取keytab文件：keytab文件名 + UUID
   private val amKeytabFileName: Option[String] = if (keytab != null && isClusterMode) {
     val principal = sparkConf.get(PRINCIPAL).orNull
     require((principal == null) == (keytab == null),
@@ -212,7 +214,7 @@ private[spark] class Client(
       // The app staging dir based on the STAGING_DIR configuration if configured
       // otherwise based on the users home directory.
       // scalastyle:off FileSystemGet
-      // 初始化App Stage目录
+      // 初始化App Stage目录：/user/root/.sparkStaging/application_17002378630_5621
       val appStagingBaseDir = sparkConf.get(STAGING_DIR)
         .map { new Path(_, UserGroupInformation.getCurrentUser.getShortUserName) }
         .getOrElse(FileSystem.get(hadoopConf).getHomeDirectory())
@@ -233,7 +235,9 @@ private[spark] class Client(
 
       // Finally, submit and monitor the application
       logInfo(s"Submitting application $appId to ResourceManager")
+      // yarn提交应用
       yarnClient.submitApplication(appContext)
+      // 连接客户端向服务端发送appID
       launcherBackend.setAppId(appId.toString)
       reportLauncherState(SparkAppHandle.State.SUBMITTED)
     } catch {
@@ -438,6 +442,17 @@ private[spark] class Client(
    * scheme is "file". This is used for preparing resources for launching the ApplicationMaster
    * container. Exposed for testing.
    */
+
+  /**
+   * 将文件拷贝到hdfs上
+   * @param destDir hdfs上的路径
+   * @param srcPath 本地文件
+   * @param replication
+   * @param symlinkCache
+   * @param force
+   * @param destName
+   * @return
+   */
   private[yarn] def copyFileToRemote(
       destDir: Path,
       srcPath: Path,
@@ -445,9 +460,12 @@ private[spark] class Client(
       symlinkCache: Map[URI, Path],
       force: Boolean = false,
       destName: Option[String] = None): Path = {
+    //获取目标和原文件系统
     val destFs = destDir.getFileSystem(hadoopConf)
     val srcFs = srcPath.getFileSystem(hadoopConf)
     var destPath = srcPath
+
+    // 如果目标和原文件系统不一致的话，才能拷贝
     if (force || !compareFs(srcFs, destFs) || "file".equals(srcFs.getScheme)) {
       destPath = new Path(destDir, destName.getOrElse(srcPath.getName()))
       logInfo(s"Uploading resource $srcPath -> $destPath")
@@ -588,6 +606,16 @@ private[spark] class Client(
      *         localized path for non-local paths, or the input `path` for local paths.
      *         The localized path will be null if the URI has already been added to the cache.
      */
+
+    /**
+     * 将本地文件上传到spark hdfs stage目录下
+     * @param path 本地路径
+     * @param resType 文件类型
+     * @param destName 远程文件名
+     * @param targetDir 远程文件目录
+     * @param appMasterOnly 是否只能AM下载
+     * @return
+     */
     def distribute(
         path: String,
         resType: LocalResourceType = LocalResourceType.FILE,
@@ -596,12 +624,17 @@ private[spark] class Client(
         appMasterOnly: Boolean = false): (Boolean, String) = {
       val trimmedPath = path.trim()
       val localURI = Utils.resolveURI(trimmedPath)
+      // 如果文件是local则直接返回，否则拷贝文件到hdfs的.sparkStaging目录下
       if (localURI.getScheme != Utils.LOCAL_SCHEME) {
+        // 记录该文件（路径以及对应的文件名）
         if (addDistributedUri(localURI)) {
           val localPath = getQualifiedLocalPath(localURI, hadoopConf)
+          // 初始化软连接名
           val linkname = targetDir.map(_ + "/").getOrElse("") +
             destName.orElse(Option(localURI.getFragment())).getOrElse(localPath.getName())
+          // 将本地文件拷贝到hdfs上，并返回hdfs上的路径
           val destPath = copyFileToRemote(destDir, localPath, replication, symlinkCache)
+          // 将拷贝到hdfs上的文件，添加到客户端分布式缓冲管理系统中
           val destFs = FileSystem.get(destPath.toUri(), hadoopConf)
           distCacheMgr.addResource(
             destFs, hadoopConf, destPath, localResources, resType, linkname, statCache,
@@ -617,6 +650,7 @@ private[spark] class Client(
 
     // If we passed in a keytab, make sure we copy the keytab to the staging directory on
     // HDFS, and setup the relevant environment vars, so the AM can login again.
+    // 将keytab文件，上传到sparkStage目录，并返回其对应的软连接
     amKeytabFileName.foreach { kt =>
       logInfo("To enable the AM to login from keytab, credentials are being copied over to the AM" +
         " via the YARN Secure Distributed Cache.")
@@ -662,6 +696,7 @@ private[spark] class Client(
      * Note that the archive cannot be a "local" URI. If none of the above settings are found,
      * then upload all files found in $SPARK_HOME/jars.
      */
+    // 如果设置"spark.yarn.archive"，则将其拷贝到.sparkStaging/__spark_libs__
     val sparkArchive = sparkConf.get(SPARK_ARCHIVE)
     if (sparkArchive.isDefined) {
       val archive = sparkArchive.get
@@ -670,6 +705,7 @@ private[spark] class Client(
         resType = LocalResourceType.ARCHIVE,
         destName = Some(LOCALIZED_LIB_DIR))
     } else {
+      //否则的查看spark.yarn.jars参数，将其拷贝到.sparkStaging/__spark_libs__下
       sparkConf.get(SPARK_JARS) match {
         case Some(jars) =>
           // Break the list of jars to upload, and resolve globs.
@@ -700,11 +736,13 @@ private[spark] class Client(
           sparkConf.set(SPARK_JARS, localJars.toSeq)
 
         case None =>
-          // No configuration, so fall back to uploading local jar files.
+          // 如果"spark.yarn.archive"、“spark.yarn.jars”都没有设置的话，
           logWarning(s"Neither ${SPARK_JARS.key} nor ${SPARK_ARCHIVE.key} is set, falling back " +
             "to uploading libraries under SPARK_HOME.")
+          // 查找的是默认${SPARK_HOME}/jars
           val jarsDir = new File(YarnCommandBuilderUtils.findJarsDir(
             sparkConf.getenv("SPARK_HOME")))
+          // 压缩${SPARK_HOME}/jars为__spark_libs__.zip
           val jarsArchive = File.createTempFile(LOCALIZED_LIB_DIR, ".zip",
             new File(Utils.getLocalDir(sparkConf)))
           val jarsStream = new ZipOutputStream(new FileOutputStream(jarsArchive))
@@ -722,6 +760,7 @@ private[spark] class Client(
             jarsStream.close()
           }
 
+          // 将文件拷贝到.sparkStaging/下
           distribute(jarsArchive.toURI.getPath,
             resType = LocalResourceType.ARCHIVE,
             destName = Some(LOCALIZED_LIB_DIR))
@@ -796,6 +835,7 @@ private[spark] class Client(
     // Update the configuration with all the distributed files, minus the conf archive. The
     // conf archive will be handled by the AM differently so that we avoid having to send
     // this configuration by other means. See SPARK-14602 for one reason of why this is needed.
+    // 更新__spark_dist_cache配置文件
     distCacheMgr.updateConfiguration(cachedResourcesConf)
 
     // Upload the conf archive to HDFS manually, and record its location in the configuration.
@@ -806,6 +846,7 @@ private[spark] class Client(
     // file systems are the same and the archive wouldn't normally be copied). In most (all?)
     // deployments, the archive would be copied anyway, since it's a temp file in the local file
     // system.
+    // 设置远端conf文件为__spark_conf__.zip
     val remoteConfArchivePath = new Path(destDir, LOCALIZED_CONF_ARCHIVE)
     val remoteFs = FileSystem.get(remoteConfArchivePath.toUri(), hadoopConf)
     cachedResourcesConf.set(CACHED_CONF_ARCHIVE, remoteConfArchivePath.toString())
@@ -821,6 +862,7 @@ private[spark] class Client(
       confsToOverride.put("spark.jars.ivySettings", path)
     }
 
+    // 初始化本地相关conf
     val localConfArchive = new Path(createConfArchive(confsToOverride).toURI())
     copyFileToRemote(destDir, localConfArchive, replication, symlinkCache, force = true,
       destName = Some(LOCALIZED_CONF_ARCHIVE))
@@ -854,9 +896,11 @@ private[spark] class Client(
    * @param confsToOverride configs that should overriden when creating the final spark conf file
    */
   private def createConfArchive(confsToOverride: Map[String, String]): File = {
+    // 本地相关conf，文件名 -> 文件
     val hadoopConfFiles = new HashMap[String, File]()
 
     // SPARK_CONF_DIR shows up in the classpath before HADOOP_CONF_DIR/YARN_CONF_DIR
+    // 先加载SPARK_CONF_DIR目录
     sys.env.get("SPARK_CONF_DIR").foreach { localConfDir =>
       val dir = new File(localConfDir)
       if (dir.isDirectory) {
@@ -872,9 +916,9 @@ private[spark] class Client(
     // SPARK-23630: during testing, Spark scripts filter out hadoop conf dirs so that user's
     // environments do not interfere with tests. This allows a special env variable during
     // tests so that custom conf dirs can be used by unit tests.
+    // 其次在加载“HADOOP_CONF_DIR”、"YARN_CONF_DIR"
     val confDirs = Seq("HADOOP_CONF_DIR", "YARN_CONF_DIR") ++
       (if (Utils.isTesting) Seq("SPARK_TEST_HADOOP_CONF_DIR") else Nil)
-
     confDirs.foreach { envKey =>
       sys.env.get(envKey).foreach { path =>
         val dir = new File(path)
@@ -893,6 +937,7 @@ private[spark] class Client(
       }
     }
 
+    // 并将相关配置文件压缩成__spark_conf__.zip文件
     val confArchive = File.createTempFile(LOCALIZED_CONF_DIR, ".zip",
       new File(Utils.getLocalDir(sparkConf)))
     val confStream = new ZipOutputStream(new FileOutputStream(confArchive))
@@ -1034,12 +1079,18 @@ private[spark] class Client(
     // 初始化Container的启动环境
     val launchEnv = setupLaunchEnv(stagingDirPath, pySparkArchives)
     // 初始化Container依赖的资源
+    // 将资源上传到/user/root/.sparkStaging/application_17002378630_5621中：
+    // /user/root/.sparkStaging/application_17002378630_5621/fxadmin.keytab
+    // /user/root/.sparkStaging/application_17002378630_5621/main.jar
+    // /user/root/.sparkStaging/application_17002378630_5621/__spark_conf__.zip
     val localResources = prepareLocalResources(stagingDirPath, pySparkArchives)
 
+    // ContainerLaunchContext
     val amContainer = Records.newRecord(classOf[ContainerLaunchContext])
     amContainer.setLocalResources(localResources.asJava)
     amContainer.setEnvironment(launchEnv.asJava)
 
+    // 初始化Container启动的java相关参数
     val javaOpts = ListBuffer[String]()
 
     javaOpts += s"-Djava.net.preferIPv6Addresses=${Utils.preferIPv6}"
@@ -1122,6 +1173,8 @@ private[spark] class Client(
       } else {
         Nil
       }
+
+    // 如果是Cluster模式，则ApplicationMaster，如果是Client模式则为ExecutorLauncher
     val amClass =
       if (isClusterMode) {
         Utils.classForName("org.apache.spark.deploy.yarn.ApplicationMaster").getName
@@ -1509,7 +1562,7 @@ private[spark] object Client extends Logging {
       sparkConf: SparkConf,
       env: HashMap[String, String],
       extraClassPath: Option[String] = None): Unit = {
-    // 将"spark.driver.extraClassPath"配置的classPath，追加到ClassPath中
+    // 将"spark.driver.extraClassPath"配置的classPath，追加到CLASSPATH中
     extraClassPath.foreach { cp =>
       addClasspathEntry(getClusterPath(sparkConf, cp), env)
     }
@@ -1519,14 +1572,17 @@ private[spark] object Client extends Logging {
       case _ => Set.empty[String]
     }
 
+    // 将PWD添加到CLASSPATH中
     addClasspathEntry(Environment.PWD.$$(), env)
 
+    // 将$PWD/__spark_conf__，添加到CLASSPATH中
     addClasspathEntry(Environment.PWD.$$() + Path.SEPARATOR + LOCALIZED_CONF_DIR, env)
 
     if (sparkConf.get(USER_CLASS_PATH_FIRST)) {
       // in order to properly add the app jar when user classpath is first
       // we have to do the mainJar separate in order to send the right thing
       // into addFileToClasspath
+      // 将主jar包添加到CLASSPATH中
       val mainJar =
         if (args != null) {
           getMainJarUri(Option(args.userJar))
@@ -1547,7 +1603,9 @@ private[spark] object Client extends Logging {
     }
 
     // Add the Spark jars to the classpath, depending on how they were distributed.
+    // 将$PWD/__spark_libs__ 添加到CLASSPATH中
     addClasspathEntry(buildPath(Environment.PWD.$$(), LOCALIZED_LIB_DIR, "*"), env)
+    // 如果“spark.yarn.archive”为空，则将"spark.yarn.jars"中，文件schema为local的添加到CLASSPATH中
     if (sparkConf.get(SPARK_ARCHIVE).isEmpty) {
       sparkConf.get(SPARK_JARS).foreach { jars =>
         jars.filter(Utils.isLocalUri).foreach { jar =>
@@ -1574,6 +1632,7 @@ private[spark] object Client extends Logging {
     // Add the localized Hadoop config at the end of the classpath, in case it contains other
     // files (such as configuration files for different services) that are not part of the
     // YARN cluster's config.
+    // 将$PWD/__spark_conf__/__hadoop_conf__ 添加到CLASSPATH中。
     addClasspathEntry(
       buildPath(Environment.PWD.$$(), LOCALIZED_CONF_DIR, LOCALIZED_HADOOP_CONF_DIR), env)
   }
@@ -1678,6 +1737,13 @@ private[spark] object Client extends Logging {
    *    starting containers.
    *
    * If either config is not available, the input path is returned.
+   */
+
+  /**
+   * 获取集群上的路径（替换指定字符串）
+   * @param conf
+   * @param path
+   * @return
    */
   def getClusterPath(conf: SparkConf, path: String): String = {
     val localPath = conf.get(GATEWAY_ROOT_PATH)

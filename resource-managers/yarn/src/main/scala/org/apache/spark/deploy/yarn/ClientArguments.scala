@@ -23,11 +23,15 @@ import org.apache.spark.internal.Logging
 
 // TODO: Add code and support for ensuring that yarn resource 'tasks' are location aware !
 private[spark] class ClientArguments(args: Array[String]) extends Logging {
-
+  // 主jar包
   var userJar: String = null
+  // 主类
   var userClass: String = null
+  // 初始的python文件
   var primaryPyFile: String = null
+  // 初始的R文件
   var primaryRFile: String = null
+  // 主类的main参数
   var userArgs: ArrayBuffer[String] = new ArrayBuffer[String]()
   var verbose: Boolean = false
 

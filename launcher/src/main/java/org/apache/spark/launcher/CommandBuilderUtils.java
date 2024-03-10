@@ -313,6 +313,7 @@ class CommandBuilderUtils {
    */
   static String findJarsDir(String sparkHome, String scalaVersion, boolean failIfNotFound) {
     // TODO: change to the correct directory once the assembly build is changed.
+    // 查找本地$SPARK_HOME/jars
     File libdir = new File(sparkHome, "jars");
     if (!libdir.isDirectory()) {
       libdir = new File(sparkHome, String.format("assembly/target/scala-%s/jars", scalaVersion));
