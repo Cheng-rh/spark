@@ -541,6 +541,13 @@ private[spark] class Client(
    * This is used for setting up a container launch context for our ApplicationMaster.
    * Exposed for testing.
    */
+
+  /**
+   * 将分布式资源保存到spark hdfs的stage目录
+   * @param destDir spark stage目录： /user/root/.sparkStaging/application_17002378630_5621/
+   * @param pySparkArchives
+   * @return
+   */
   def prepareLocalResources(
       destDir: Path,
       pySparkArchives: Seq[String]): HashMap[String, LocalResource] = {
