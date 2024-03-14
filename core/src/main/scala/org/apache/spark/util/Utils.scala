@@ -1947,6 +1947,7 @@ private[spark] object Utils
 
   /** Load properties present in the given file. */
   def getPropertiesFromFile(filename: String): Map[String, String] = {
+    // 加载配置文件中的内容
     val file = new File(filename)
     require(file.exists(), s"Properties file $file does not exist")
     require(file.isFile(), s"Properties file $file is not a normal file")

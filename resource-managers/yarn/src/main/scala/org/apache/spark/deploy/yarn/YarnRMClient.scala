@@ -58,9 +58,11 @@ private[spark] class YarnRMClient extends Logging {
       sparkConf: SparkConf,
       uiAddress: Option[String],
       uiHistoryAddress: String): Unit = {
+    // 初始化AM -> RM的客户端连接
     amClient = AMRMClient.createAMRMClient()
     amClient.init(conf)
     amClient.start()
+
     this.uiHistoryAddress = uiHistoryAddress
 
     val trackingUrl = uiAddress.getOrElse {
@@ -68,6 +70,7 @@ private[spark] class YarnRMClient extends Logging {
     }
 
     logInfo("Registering the ApplicationMaster")
+    // 注册AM(IP + 端口 + spark-driver-url地址)
     synchronized {
       amClient.registerApplicationMaster(driverHost, driverPort, trackingUrl)
       registered = true

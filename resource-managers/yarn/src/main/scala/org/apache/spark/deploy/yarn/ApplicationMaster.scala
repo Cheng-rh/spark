@@ -193,6 +193,7 @@ private[spark] class ApplicationMaster(
 
   final def run(): Int = {
     try {
+      //初始化attemptID
       val attemptID = if (isClusterMode) {
         // Set the web ui port to be ephemeral for yarn if not set explicitly
         // so we don't conflict with other spark processes running on the same box
@@ -261,6 +262,7 @@ private[spark] class ApplicationMaster(
         }
       }
 
+      // 如果是yarn-cluster模式，则运行Driver，否则运行ExecutorLauncher
       if (isClusterMode) {
         runDriver()
       } else {
@@ -426,9 +428,12 @@ private[spark] class ApplicationMaster(
       appAttempt: ApplicationAttemptId): Unit = {
     val appId = appAttempt.getApplicationId().toString()
     val attemptId = appAttempt.getAttemptId().toString()
+
+    // 通过appID、attemptId 获取对应的历史地址
     val historyAddress = ApplicationMaster
       .getHistoryServerAddress(_sparkConf, yarnConf, appId, attemptId)
 
+    //注册AM
     client.register(host, port, yarnConf, _sparkConf, uiAddress, historyAddress)
     registered = true
   }
@@ -495,10 +500,12 @@ private[spark] class ApplicationMaster(
 
   private def runDriver(): Unit = {
     addAmIpFilter(None, System.getenv(ApplicationConstants.APPLICATION_WEB_PROXY_BASE_ENV))
+    // 开始运行Driver类
     userClassThread = startUserApplication()
 
     // This a bit hacky, but we need to wait until the spark.driver.port property has
     // been set by the Thread executing the user class.
+    // 等待Driver初始化线程，超时时间默认为100s
     logInfo("Waiting for spark context initialization...")
     val totalWaitTime = sparkConf.get(AM_MAX_WAIT_TIME)
     try {
@@ -510,11 +517,14 @@ private[spark] class ApplicationMaster(
         val userConf = sc.getConf
         val host = userConf.get(DRIVER_HOST_ADDRESS)
         val port = userConf.get(DRIVER_PORT)
+        // 注册AM
         registerAM(host, port, userConf, sc.ui.map(_.webUrl), appAttemptId)
 
         val driverRef = rpcEnv.setupEndpointRef(
           RpcAddress(host, port),
           YarnSchedulerBackend.ENDPOINT_NAME)
+
+        //初始化申请
         createAllocator(driverRef, userConf, rpcEnv, appAttemptId, distCacheConf())
       } else {
         // Sanity check; should never happen in normal operation, since sc should only be null
@@ -660,6 +670,7 @@ private[spark] class ApplicationMaster(
   }
 
   private def distCacheConf(): SparkConf = {
+    //将远程配置文件加载到distCacheConf中
     val distCacheConf = new SparkConf(false)
     if (args.distCacheConf != null) {
       Utils.getPropertiesFromFile(args.distCacheConf).foreach { case (k, v) =>
@@ -725,9 +736,11 @@ private[spark] class ApplicationMaster(
       // TODO(davies): add R dependencies here
     }
 
+    // 反射获取Driver类的main函数
     val mainMethod = userClassLoader.loadClass(args.userClass)
       .getMethod("main", classOf[Array[String]])
 
+    // 启动异步现场执行Driver类的main()方法
     val userThread = new Thread {
       override def run(): Unit = {
         try {
@@ -883,6 +896,7 @@ object ApplicationMaster extends Logging {
 
   def main(args: Array[String]): Unit = {
     SignalUtils.registerLogger(log)
+    // 解析AM对应的参数
     val amArgs = new ApplicationMasterArguments(args)
     val sparkConf = new SparkConf()
     if (amArgs.propertiesFile != null) {
@@ -899,12 +913,14 @@ object ApplicationMaster extends Logging {
       sys.props(k) = v
     }
 
+    //初始化yarn configuration以及AM
     val yarnConf = new YarnConfiguration(SparkHadoopUtil.newConfiguration(sparkConf))
     master = new ApplicationMaster(amArgs, sparkConf, yarnConf)
 
     val ugi = sparkConf.get(PRINCIPAL) match {
       // We only need to log in with the keytab in cluster mode. In client mode, the driver
       // handles the user keytab.
+      // 如果开启kerberos认证，并是集群模式，则进行UGI认证
       case Some(principal) if master.isClusterMode =>
         val originalCreds = UserGroupInformation.getCurrentUser().getCredentials()
         SparkHadoopUtil.get.loginUserFromKeytab(principal, sparkConf.get(KEYTAB).orNull)
@@ -930,6 +946,7 @@ object ApplicationMaster extends Logging {
         SparkHadoopUtil.get.createSparkUser()
     }
 
+    // 执行run方法
     ugi.doAs(new PrivilegedExceptionAction[Unit]() {
       override def run(): Unit = System.exit(master.run())
     })
