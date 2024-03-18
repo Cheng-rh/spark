@@ -1084,6 +1084,7 @@ object SparkSession extends Logging {
      * @since 2.0.0
      */
     def getOrCreate(): SparkSession = synchronized {
+      //初始化sparkconf，并将builader设置的参数，回填到sparkconf中
       val sparkConf = new SparkConf()
       options.foreach { case (k, v) => sparkConf.set(k, v) }
 
@@ -1092,6 +1093,7 @@ object SparkSession extends Logging {
       }
 
       // Get the session from current thread's active session.
+      // 优先从当前线程缓冲中获取session
       var session = activeThreadSession.get()
       if ((session ne null) && !session.sparkContext.isStopped) {
         applyModifiableSettings(session, new java.util.HashMap[String, String](options.asJava))
@@ -1101,6 +1103,7 @@ object SparkSession extends Logging {
       // Global synchronization so we will only set the default session once.
       SparkSession.synchronized {
         // If the current thread does not have an active session, get it from the global session.
+        // 如果当前线程不包含活跃的session，则返回全局默认的session
         session = defaultSession.get()
         if ((session ne null) && !session.sparkContext.isStopped) {
           applyModifiableSettings(session, new java.util.HashMap[String, String](options.asJava))
@@ -1113,7 +1116,7 @@ object SparkSession extends Logging {
           if (!sparkConf.contains("spark.app.name")) {
             sparkConf.setAppName(java.util.UUID.randomUUID().toString)
           }
-
+          //如果全局默认的session也不存在的话，则直接构造一个新的
           SparkContext.getOrCreate(sparkConf)
           // Do not update `SparkConf` for existing `SparkContext`, as it's shared by all sessions.
         }

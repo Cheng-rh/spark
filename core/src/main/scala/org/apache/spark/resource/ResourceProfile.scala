@@ -370,8 +370,11 @@ object ResourceProfile extends Logging {
       defaultProfile match {
         case Some(prof) => prof
         case None =>
+          // 获取task的资源配置
           val taskResources = getDefaultTaskResources(conf)
+          // 获取executor的资源配置
           val executorResources = getDefaultExecutorResources(conf)
+          // 资源配置类
           val defProf = new ResourceProfile(executorResources, taskResources)
           defProf.setToDefaultProfile()
           defaultProfile = Some(defProf)

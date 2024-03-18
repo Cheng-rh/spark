@@ -408,6 +408,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
       setLogLevel(level)
     }
+    //对sparkConf的相关配置进行校验
     _conf.validateSettings()
     _conf.set("spark.app.startTime", startTime.toString)
 
@@ -420,11 +421,13 @@ class SparkContext(config: SparkConf) extends Logging {
     // This should be set as early as possible.
     SparkContext.fillMissingMagicCommitterConfsIfNeeded(_conf)
 
+    // 添加JVM高级参数
     SparkContext.supplementJavaModuleOptions(_conf)
     SparkContext.supplementJavaIPv6Options(_conf)
 
     _driverLogger = DriverLogger(_conf)
 
+    // 加载spark.driver.resourcesFile，默认不配置
     val resourcesFileOpt = conf.get(DRIVER_RESOURCES_FILE)
     _resources = getOrDiscoverAllResources(_conf, SPARK_DRIVER_PREFIX, resourcesFileOpt)
     logResourceInfo(SPARK_DRIVER_PREFIX, _resources)
@@ -449,11 +452,15 @@ class SparkContext(config: SparkConf) extends Logging {
 
     _conf.set(EXECUTOR_ID, SparkContext.DRIVER_IDENTIFIER)
 
+    // 获取“spark.jars”配置
     _jars = Utils.getUserJars(_conf)
+    // 获取“spark.files”配置
     _files = _conf.getOption(FILES.key).map(_.split(",")).map(_.filter(_.nonEmpty))
       .toSeq.flatten
+    // 获取“spark.archive”配置
     _archives = _conf.getOption(ARCHIVES.key).map(Utils.stringToSeq).toSeq.flatten
 
+    // 如果开启spark history服务，则获取相应的event 日志
     _eventLogDir =
       if (isEventLogEnabled) {
         val unresolvedDir = conf.get(EVENT_LOG_DIR).stripSuffix("/")
@@ -472,13 +479,17 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     }
 
+    // spark driver 监听器
     _listenerBus = new LiveListenerBus(_conf)
     _resourceProfileManager = new ResourceProfileManager(_conf, _listenerBus)
 
     // Initialize the app status store and listener before SparkEnv is created so that it gets
     // all events.
+    // 是否要开启 spark app 状态的统计开关
     val appStatusSource = AppStatusSource.createSource(conf)
+    // 构造Appstatus的统计类
     _statusStore = AppStatusStore.createLiveStore(conf, appStatusSource)
+    // 将app status listener 注册到driver的监听器中
     listenerBus.addToStatusQueue(_statusStore.listener.get)
 
     // Create the Spark execution environment (cache, map output tracker, etc)
@@ -2925,6 +2936,7 @@ object SparkContext extends Logging {
     // Synchronize to ensure that multiple create requests don't trigger an exception
     // from assertNoOtherContextIsRunning within setActiveContext
     SPARK_CONTEXT_CONSTRUCTOR_LOCK.synchronized {
+      // new一个SparkContext，并设置当前活跃的context
       if (activeContext.get() == null) {
         setActiveContext(new SparkContext(config))
       } else {

@@ -55,6 +55,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
   // Indicate if `stop()` is called
   private val stopped = new AtomicBoolean(false)
 
+  // 通常包含四种类型的事件队列
   private val queues = new CopyOnWriteArrayList[AsyncEventQueue]()
 
   // Visible for testing.

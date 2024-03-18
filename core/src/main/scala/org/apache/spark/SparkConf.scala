@@ -505,6 +505,7 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
     }
 
     // Used by Yarn in 1.1 and before
+    // spark.driver.extraLibraryPath 替换 spark.driver.libraryPath
     sys.props.get("spark.driver.libraryPath").foreach { value =>
       val warning =
         s"""
@@ -517,6 +518,7 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
     }
 
     // Validate spark.executor.extraJavaOptions
+    // 校验 spark.executor.extraJavaOptions 配置
     Seq(EXECUTOR_JAVA_OPTIONS.key, "spark.executor.defaultJavaOptions").foreach { executorOptsKey =>
       getOption(executorOptsKey).foreach { javaOpts =>
         if (javaOpts.contains("-Dspark")) {

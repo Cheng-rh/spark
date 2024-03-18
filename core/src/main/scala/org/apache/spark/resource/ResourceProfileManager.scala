@@ -36,6 +36,10 @@ import org.apache.spark.util.Utils.isTesting
  * so this shouldn't be much overhead.
  */
 @Evolving
+
+/**
+ * 资源配置管理类
+ */
 private[spark] class ResourceProfileManager(sparkConf: SparkConf,
     listenerBus: LiveListenerBus) extends Logging {
   private val resourceProfileIdToResourceProfile = new HashMap[Int, ResourceProfile]()
@@ -45,7 +49,9 @@ private[spark] class ResourceProfileManager(sparkConf: SparkConf,
     (lock.readLock(), lock.writeLock())
   }
 
+  // 是否开启动态executor配置
   private val dynamicEnabled = Utils.isDynamicAllocationEnabled(sparkConf)
+
   private val master = sparkConf.getOption("spark.master")
   private val isYarn = master.isDefined && master.get.equals("yarn")
   private val isK8s = master.isDefined && master.get.startsWith("k8s://")
@@ -55,6 +61,7 @@ private[spark] class ResourceProfileManager(sparkConf: SparkConf,
   private val notRunningUnitTests = !isTesting
   private val testExceptionThrown = sparkConf.get(RESOURCE_PROFILE_MANAGER_TESTING)
 
+  //加载资源配置（task + executor）
   private val defaultProfile = ResourceProfile.getOrCreateDefaultProfile(sparkConf)
   addResourceProfile(defaultProfile)
 
