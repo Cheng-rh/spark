@@ -232,6 +232,17 @@ object SparkEnv extends Logging {
   /**
    * Create a SparkEnv for the driver.
    */
+
+  /**
+   * 构造spark driver env
+   * @param conf sparkConf
+   * @param isLocal 是否为local模式
+   * @param listenerBus  spark driver 的监听总线
+   * @param numCores  spark dirver cores
+   * @param sparkContext sparkContext 上下文
+   * @param mockOutputCommitCoordinator   默认为none
+   * @return
+   */
   private[spark] def createDriverEnv(
       conf: SparkConf,
       isLocal: Boolean,
@@ -242,6 +253,8 @@ object SparkEnv extends Logging {
     assert(conf.contains(DRIVER_HOST_ADDRESS),
       s"${DRIVER_HOST_ADDRESS.key} is not set on the driver!")
     assert(conf.contains(DRIVER_PORT), s"${DRIVER_PORT.key} is not set on the driver!")
+
+    // 获取driver的 host and ip
     val bindAddress = conf.get(DRIVER_BIND_ADDRESS)
     val advertiseAddress = conf.get(DRIVER_HOST_ADDRESS)
     val port = conf.get(DRIVER_PORT)
@@ -250,6 +263,8 @@ object SparkEnv extends Logging {
     } else {
       None
     }
+
+    // 开始构造spark env
     create(
       conf,
       SparkContext.DRIVER_IDENTIFIER,
@@ -314,9 +329,12 @@ object SparkEnv extends Logging {
     val isDriver = executorId == SparkContext.DRIVER_IDENTIFIER
 
     // Listener bus is only used on the driver
+    // 如果是spark driver 模式，则监听总线不能为空
     if (isDriver) {
       assert(listenerBus != null, "Attempted to create driver SparkEnv with null listener bus!")
     }
+
+    // new 安全管理器，并进行初始化
     val authSecretFileConf = if (isDriver) AUTH_SECRET_FILE_DRIVER else AUTH_SECRET_FILE_EXECUTOR
     val securityManager = new SecurityManager(conf, ioEncryptionKey, authSecretFileConf)
     if (isDriver) {
@@ -339,6 +357,7 @@ object SparkEnv extends Logging {
       conf.set(DRIVER_PORT, rpcEnv.address.port)
     }
 
+    // 序列化相关初始化
     val serializer = Utils.instantiateSerializerFromConf[Serializer](SERIALIZER, conf, isDriver)
     logDebug(s"Using serializer: ${serializer.getClass}")
 
@@ -351,14 +370,17 @@ object SparkEnv extends Logging {
       RpcEndpointRef = {
       if (isDriver) {
         logInfo("Registering " + name)
+        // 在rpcEnv环境中注册端点
         rpcEnv.setupEndpoint(name, endpointCreator)
       } else {
         RpcUtils.makeDriverRef(name, conf, rpcEnv)
       }
     }
 
+    // 初始化广播管理器
     val broadcastManager = new BroadcastManager(isDriver, conf)
 
+    // 初始化mapOutputTracker
     val mapOutputTracker = if (isDriver) {
       new MapOutputTrackerMaster(conf, broadcastManager, isLocal)
     } else {
@@ -367,16 +389,19 @@ object SparkEnv extends Logging {
 
     // Have to assign trackerEndpoint after initialization as MapOutputTrackerEndpoint
     // requires the MapOutputTracker itself
+    // 注册MapOutputTrackerEndpoint的端点
     mapOutputTracker.trackerEndpoint = registerOrLookupEndpoint(MapOutputTracker.ENDPOINT_NAME,
       new MapOutputTrackerMasterEndpoint(
         rpcEnv, mapOutputTracker.asInstanceOf[MapOutputTrackerMaster], conf))
 
+    // 块管理器端口
     val blockManagerPort = if (isDriver) {
       conf.get(DRIVER_BLOCK_MANAGER_PORT)
     } else {
       conf.get(BLOCK_MANAGER_PORT)
     }
 
+    // 是否依赖外部shuffle服务
     val externalShuffleClient = if (conf.get(config.SHUFFLE_SERVICE_ENABLED)) {
       val transConf = SparkTransportConf.fromSparkConf(
         conf,
@@ -384,6 +409,8 @@ object SparkEnv extends Logging {
         numUsableCores,
         sslOptions = Some(securityManager.getRpcSSLOptions())
       )
+
+      // 初始化外部shuffle服务的客户端
       Some(new ExternalBlockStoreClient(transConf, securityManager,
         securityManager.isAuthenticationEnabled(), conf.get(config.SHUFFLE_REGISTRATION_TIMEOUT)))
     } else {
@@ -392,7 +419,9 @@ object SparkEnv extends Logging {
 
     // Mapping from block manager id to the block manager's information.
     val blockManagerInfo = new concurrent.TrieMap[BlockManagerId, BlockManagerInfo]()
+    //初始化块管理器Master
     val blockManagerMaster = new BlockManagerMaster(
+      // 注册BlockManagerMaster的端点
       registerOrLookupEndpoint(
         BlockManagerMaster.DRIVER_ENDPOINT_NAME,
         new BlockManagerMasterEndpoint(
@@ -408,12 +437,14 @@ object SparkEnv extends Logging {
           mapOutputTracker.asInstanceOf[MapOutputTrackerMaster],
           _shuffleManager = null,
           isDriver)),
+      // 注册BlockManagerMaster 心跳服务的端点
       registerOrLookupEndpoint(
         BlockManagerMaster.DRIVER_HEARTBEAT_ENDPOINT_NAME,
         new BlockManagerMasterHeartbeatEndpoint(rpcEnv, isLocal, blockManagerInfo)),
       conf,
       isDriver)
 
+    // 块传输服务
     val blockTransferService =
       new NettyBlockTransferService(conf, securityManager, serializerManager, bindAddress,
         advertiseAddress, blockManagerPort, numUsableCores, blockManagerMaster.driverEndpoint)
@@ -423,6 +454,7 @@ object SparkEnv extends Logging {
     //     in the SparkContext and Executor, to allow for custom ShuffleManagers defined
     //     in user jars. The BlockManager uses a lazy val to obtain the
     //     shuffleManager from the SparkEnv.
+    // 初始化块管理
     val blockManager = new BlockManager(
       executorId,
       rpcEnv,
@@ -436,6 +468,7 @@ object SparkEnv extends Logging {
       securityManager,
       externalShuffleClient)
 
+    // 初始化spark 度量系统
     val metricsSystem = if (isDriver) {
       // Don't start metrics system right now for Driver.
       // We need to wait for the task scheduler to give us an app ID.
@@ -451,29 +484,40 @@ object SparkEnv extends Logging {
       ms
     }
 
+    // 输出提交管理器（用来请求是否有权限将输出提交到hdfs上）
     val outputCommitCoordinator = mockOutputCommitCoordinator.getOrElse {
       if (isDriver) {
         new OutputCommitCoordinator(conf, isDriver, sc)
       } else {
         new OutputCommitCoordinator(conf, isDriver)
       }
-
     }
+
+    // 注册OutputCommitCoordinator的端点
     val outputCommitCoordinatorRef = registerOrLookupEndpoint("OutputCommitCoordinator",
       new OutputCommitCoordinatorEndpoint(rpcEnv, outputCommitCoordinator))
     outputCommitCoordinator.coordinatorRef = Some(outputCommitCoordinatorRef)
 
+    // 初始化SparkEnv
     val envInstance = new SparkEnv(
       executorId,
+      // netty rpc env
       rpcEnv,
+      // 序列化
       serializer,
       closureSerializer,
       serializerManager,
+      // stage task map输出
       mapOutputTracker,
+      // 广播管理
       broadcastManager,
+      // 块管理
       blockManager,
+      // 安全管理器
       securityManager,
+      // 度量系统
       metricsSystem,
+      //stage输出号到hdfs的权限管理
       outputCommitCoordinator,
       conf)
 

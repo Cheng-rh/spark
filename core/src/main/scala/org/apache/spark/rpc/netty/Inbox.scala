@@ -75,6 +75,7 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
   private var numActiveThreads = 0
 
   // OnStart should be the first message to process
+  // 初始化时，在消息中添加OnStart的消息
   inbox.synchronized {
     messages.add(OnStart)
   }
@@ -88,6 +89,7 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
       if (!enableConcurrent && numActiveThreads != 0) {
         return
       }
+      // 取出收件箱的消息
       message = messages.poll()
       if (message != null) {
         numActiveThreads += 1
@@ -115,8 +117,9 @@ private[netty] class Inbox(val endpointName: String, val endpoint: RpcEndpoint)
             endpoint.receive.applyOrElse[Any, Unit](content, { msg =>
               throw new SparkException(s"Unsupported message $message from ${_sender}")
             })
-
+          // 如果是启动模式，则通知端点进行启动
           case OnStart =>
+            // 调用端点的启动接口，默认不做任何事
             endpoint.onStart()
             if (!endpoint.isInstanceOf[ThreadSafeRpcEndpoint]) {
               inbox.synchronized {

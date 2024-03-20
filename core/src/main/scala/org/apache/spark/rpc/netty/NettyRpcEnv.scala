@@ -60,6 +60,7 @@ private[netty] class NettyRpcEnv(
     sslOptions = Some(securityManager.getRpcSSLOptions())
   )
 
+  //调度器
   private val dispatcher: Dispatcher = new Dispatcher(this, numUsableCores)
 
   private val streamManager = new NettyStreamManager(this)
@@ -135,6 +136,7 @@ private[netty] class NettyRpcEnv(
   }
 
   override def setupEndpoint(name: String, endpoint: RpcEndpoint): RpcEndpointRef = {
+    // 调度器注册端点信息
     dispatcher.registerRpcEndpoint(name, endpoint)
   }
 

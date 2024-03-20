@@ -37,6 +37,9 @@ private sealed abstract class MessageLoop(dispatcher: Dispatcher) extends Loggin
   private val active = new LinkedBlockingQueue[Inbox]()
 
   // Message loop task; should be run in all threads of the message loop's pool.
+  /**
+   * 调度器中循环监听收件箱的线程
+   */
   protected val receiveLoopRunnable = new Runnable() {
     override def run(): Unit = receiveLoop()
   }
@@ -60,18 +63,24 @@ private sealed abstract class MessageLoop(dispatcher: Dispatcher) extends Loggin
     threadpool.awaitTermination(Long.MaxValue, TimeUnit.MILLISECONDS)
   }
 
+  /**
+   * 将收件箱塞到激活的队列中
+   * @param inbox
+   */
   protected final def setActive(inbox: Inbox): Unit = active.offer(inbox)
 
   private def receiveLoop(): Unit = {
     try {
       while (true) {
         try {
+          // 取出激活的收件箱
           val inbox = active.take()
           if (inbox == MessageLoop.PoisonPill) {
             // Put PoisonPill back so that other threads can see it.
             setActive(MessageLoop.PoisonPill)
             return
           }
+          // 收件箱处理消息
           inbox.process(dispatcher)
         } catch {
           case NonFatal(e) => logError(e.getMessage, e)
@@ -107,6 +116,11 @@ private class SharedMessageLoop(
 
   private val endpoints = new ConcurrentHashMap[String, Inbox]()
 
+  /**
+   * 获取调度器可用的cpu核数
+   * @param conf
+   * @return
+   */
   private def getNumOfThreads(conf: SparkConf): Int = {
     val availableCores =
       if (numUsableCores > 0) numUsableCores else Runtime.getRuntime.availableProcessors()
@@ -121,6 +135,7 @@ private class SharedMessageLoop(
   }
 
   /** Thread pool used for dispatching messages. */
+  // 调度器的线程池
   override protected val threadpool: ThreadPoolExecutor = {
     val numThreads = getNumOfThreads(conf)
     val pool = ThreadUtils.newDaemonFixedThreadPool(numThreads, "dispatcher-event-loop")
@@ -146,9 +161,12 @@ private class SharedMessageLoop(
   }
 
   def register(name: String, endpoint: RpcEndpoint): Unit = {
+    // 初始化一个收件箱（端点名，端点）
     val inbox = new Inbox(name, endpoint)
+    // 建立名字和收件箱的映射关系
     endpoints.put(name, inbox)
     // Mark active to handle the OnStart message.
+    // 激活收件箱，用来处理OnStart的消息
     setActive(inbox)
   }
 }

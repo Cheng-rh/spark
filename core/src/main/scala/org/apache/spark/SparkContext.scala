@@ -280,6 +280,7 @@ class SparkContext(config: SparkConf) extends Logging {
       conf: SparkConf,
       isLocal: Boolean,
       listenerBus: LiveListenerBus): SparkEnv = {
+    //构造spark driver env
     SparkEnv.createDriverEnv(
       conf,
       isLocal,
@@ -502,6 +503,7 @@ class SparkContext(config: SparkConf) extends Logging {
       _conf.set("spark.repl.class.uri", replUri)
     }
 
+    // 初始化spark状态追踪器
     _statusTracker = new SparkStatusTracker(this, _statusStore)
 
     _progressBar =
@@ -511,6 +513,7 @@ class SparkContext(config: SparkConf) extends Logging {
         None
       }
 
+    // 初始化SparkUI页面
     _ui =
       if (conf.get(UI_ENABLED)) {
         Some(SparkUI.create(Some(this), _statusStore, _conf, _env.securityManager, appName, "",
@@ -521,6 +524,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     // Bind the UI before starting the task scheduler to communicate
     // the bound port to the cluster manager properly
+    // 启动SparkUI服务
     _ui.foreach(_.bind())
 
     _hadoopConfiguration = SparkHadoopUtil.get.newConfiguration(_conf)
@@ -556,6 +560,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     }
 
+    // 获取executor的内存
     _executorMemory = SparkContext.executorMemoryInMb(_conf)
 
     // Convert java options to env vars as a work around
@@ -582,19 +587,28 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // We need to register "HeartbeatReceiver" before "createTaskScheduler" because Executor will
     // retrieve "HeartbeatReceiver" in the constructor. (SPARK-6640)
+    // 注册心跳服务的端点
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
     // Initialize any plugins before the task scheduler is initialized.
+    // 初始化插件
     _plugins = PluginContainer(this, _resources.asJava)
+
+    // 初始化shuffle Manager
     _env.initializeShuffleManager()
+    // 初始化内存管理器
     _env.initializeMemoryManager(SparkContext.numDriverCores(master, conf))
 
     // Create and start the scheduler
+    // 初始化TaskScheduler
     val (sched, ts) = SparkContext.createTaskScheduler(this, master)
     _schedulerBackend = sched
     _taskScheduler = ts
+
+    // 初始化DAGScheduler
     _dagScheduler = new DAGScheduler(this)
+
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
     if (_conf.get(EXECUTOR_ALLOW_SYNC_LOG_LEVEL)) {
@@ -3246,14 +3260,18 @@ object SparkContext extends Logging {
         }
         (backend, scheduler)
 
+      // 如果是yarn模式，则初始化YarnClusterManager
       case masterUrl =>
         val cm = getClusterManager(masterUrl) match {
           case Some(clusterMgr) => clusterMgr
           case None => throw new SparkException("Could not parse Master URL: '" + master + "'")
         }
         try {
+          // 初始化taskScheduler
           val scheduler = cm.createTaskScheduler(sc, masterUrl)
+          // 初始化taskScheduler后端
           val backend = cm.createSchedulerBackend(sc, masterUrl, scheduler)
+          // 初始化TaskScheduler的调度策略
           cm.initialize(scheduler, backend)
           (backend, scheduler)
         } catch {

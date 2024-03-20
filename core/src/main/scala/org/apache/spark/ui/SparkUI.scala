@@ -95,11 +95,16 @@ private[spark] class SparkUI private (
 
   /** Initialize all components of the server. */
   def initialize(): Unit = {
+    // 初始化页面的标签页
+    // job
     val jobsTab = new JobsTab(this, store)
     attachTab(jobsTab)
+    // stage
     val stagesTab = new StagesTab(this, store)
     attachTab(stagesTab)
+    // 存储
     attachTab(new StorageTab(this, store))
+    // 环境
     attachTab(new EnvironmentTab(this, store))
     if (sc.map(_.conf.get(DRIVER_LOG_LOCAL_DIR).nonEmpty).getOrElse(false)) {
       val driverLogTab = new DriverLogTab(this)
@@ -108,6 +113,7 @@ private[spark] class SparkUI private (
         (request: HttpServletRequest) => driverLogTab.getPage.renderLog(request),
         sc.get.conf))
     }
+    // executor
     attachTab(new ExecutorsTab(this))
     addStaticHandler(SparkUI.STATIC_RESOURCE_DIR)
     attachHandler(createRedirectHandler("/", "/jobs/", basePath = basePath))
@@ -124,6 +130,7 @@ private[spark] class SparkUI private (
       httpMethods = Set("GET", "POST")))
   }
 
+  //初始化
   initialize()
 
   def getSparkUser: String = {
@@ -244,6 +251,7 @@ private[spark] object SparkUI {
       startTime: Long,
       appSparkVersion: String = org.apache.spark.SPARK_VERSION): SparkUI = {
 
+    // 初始化SparkUI界面
     new SparkUI(store, sc, conf, securityManager, appName, basePath, startTime, appSparkVersion)
   }
 

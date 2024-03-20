@@ -31,7 +31,9 @@ private[spark] class YarnClusterManager extends ExternalClusterManager {
 
   override def createTaskScheduler(sc: SparkContext, masterURL: String): TaskScheduler = {
     sc.deployMode match {
+      // 如果是yarn-cluster模式，则为YarnClusterScheduler
       case "cluster" => new YarnClusterScheduler(sc)
+      // 如果是yarn-client模式，则为yarnScheduler
       case "client" => new YarnScheduler(sc)
       case _ => throw new SparkException(s"Unknown deploy mode '${sc.deployMode}' for Yarn")
     }
@@ -41,6 +43,7 @@ private[spark] class YarnClusterManager extends ExternalClusterManager {
       masterURL: String,
       scheduler: TaskScheduler): SchedulerBackend = {
     sc.deployMode match {
+      // 根据yarn-client or cluster模式，确定是采用YarnClusterSchedulerBackend or YarnClientSchedulerBackend
       case "cluster" =>
         new YarnClusterSchedulerBackend(scheduler.asInstanceOf[TaskSchedulerImpl], sc)
       case "client" =>

@@ -218,6 +218,7 @@ private[spark] class TaskSchedulerImpl(
     this.backend = backend
     schedulableBuilder = {
       schedulingMode match {
+        // 默认的task调度，只有先进先出调度和公平调度
         case SchedulingMode.FIFO =>
           new FIFOSchedulableBuilder(rootPool)
         case SchedulingMode.FAIR =>

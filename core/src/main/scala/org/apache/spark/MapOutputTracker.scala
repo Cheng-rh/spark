@@ -669,6 +669,13 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
  * ShuffleMapStage uses this class for tracking available / missing outputs in order to determine
  * which tasks need to be run.
  */
+
+/**
+ * driver端，用来记录每个stage中map的输出位置
+ * @param conf spark conf
+ * @param broadcastManager 广播管理器
+ * @param isLocal 是否为本地模式
+ */
 private[spark] class MapOutputTrackerMaster(
     conf: SparkConf,
     private[spark] val broadcastManager: BroadcastManager,
@@ -679,6 +686,7 @@ private[spark] class MapOutputTrackerMaster(
   private val minSizeForBroadcast = conf.get(SHUFFLE_MAPOUTPUT_MIN_SIZE_FOR_BROADCAST).toInt
 
   /** Whether to compute locality preferences for reduce tasks */
+  // 是否为reduce 任务计算本地性
   private val shuffleLocalityEnabled = conf.get(SHUFFLE_REDUCE_LOCALITY_ENABLE)
 
   private val shuffleMigrationEnabled = conf.get(DECOMMISSION_ENABLED) &&

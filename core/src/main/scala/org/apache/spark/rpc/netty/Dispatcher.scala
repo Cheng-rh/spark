@@ -53,7 +53,9 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
   private var stopped = false
 
   def registerRpcEndpoint(name: String, endpoint: RpcEndpoint): NettyRpcEndpointRef = {
+    // 端点的RPC地址（类似于邮编地址）
     val addr = RpcEndpointAddress(nettyEnv.address, name)
+    // 端点编号，便于客户端调用（类似于邮编）
     val endpointRef = new NettyRpcEndpointRef(nettyEnv.conf, addr, nettyEnv)
     synchronized {
       if (stopped) {
@@ -66,6 +68,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       // This must be done before assigning RpcEndpoint to MessageLoop, as MessageLoop sets Inbox be
       // active when registering, and endpointRef must be put into endpointRefs before onStart is
       // called.
+      // 建立端点和端点编号的映射关系
       endpointRefs.put(endpoint, endpointRef)
 
       var messageLoop: MessageLoop = null
@@ -74,9 +77,11 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
           case e: IsolatedRpcEndpoint =>
             new DedicatedMessageLoop(name, e, this)
           case _ =>
+            // 将端点注册到共享线程池中
             sharedLoop.register(name, endpoint)
             sharedLoop
         }
+        //端点名称与消息循环处理器的映射关系
         endpoints.put(name, messageLoop)
       } catch {
         case NonFatal(e) =>
@@ -84,6 +89,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
           throw e
       }
     }
+    //将端点编号返回
     endpointRef
   }
 

@@ -35,12 +35,14 @@ private[spark] class BroadcastManager(
   private var initialized = false
   private var broadcastFactory: BroadcastFactory = null
 
+  //类初始化
   initialize()
 
   // Called by SparkContext or Executor before using Broadcast
   private def initialize(): Unit = {
     synchronized {
       if (!initialized) {
+        // 初始化广播工厂
         broadcastFactory = new TorrentBroadcastFactory
         broadcastFactory.initialize(isDriver, conf)
         initialized = true
