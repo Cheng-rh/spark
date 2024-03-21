@@ -254,6 +254,7 @@ private[spark] class BlockManager(
 
   // Client to read other executors' blocks. This is either an external service, or just the
   // standard BlockTransferService to directly connect to other Executors.
+  // 客户端，用来加载其他executor的block 额外的服务或者默认的块客户端，直接连接其他executor
   private[spark] val blockStoreClient = externalBlockStoreClient.getOrElse(blockTransferService)
 
   // Max number of failures before this block manager refreshes the block locations from the driver

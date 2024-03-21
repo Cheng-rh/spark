@@ -234,6 +234,7 @@ private[spark] class TaskSchedulerImpl(
   def newTaskId(): Long = nextTaskId.getAndIncrement()
 
   override def start(): Unit = {
+    //任务调度后端
     backend.start()
 
     if (!isLocal && conf.get(SPECULATION_ENABLED)) {

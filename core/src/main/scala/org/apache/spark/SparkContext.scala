@@ -624,6 +624,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
 
     // create and start the heartbeater for collecting memory metrics
+    // driver心跳，用来收集内存信息
     _heartbeater = new Heartbeater(
       () => SparkContext.this.reportHeartBeat(_executorMetricsSource),
       "driver-heartbeater",
@@ -632,6 +633,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
+    // 启动spark task调度
     _taskScheduler.start()
 
     _applicationId = _taskScheduler.applicationId()
@@ -2856,6 +2858,8 @@ class SparkContext(config: SparkConf) extends Logging {
     // In the driver, we do not track per-stage metrics, so use a dummy stage for the key
     driverUpdates.put(EventLoggingListener.DRIVER_STAGE_KEY, new ExecutorMetrics(currentMetrics))
     val accumUpdates = new Array[(Long, Int, Int, Seq[AccumulableInfo])](0).toImmutableArraySeq
+
+    //监听总线发送SparkListenerExecutorMetricsUpdate事件
     listenerBus.post(SparkListenerExecutorMetricsUpdate("driver", accumUpdates,
       driverUpdates))
   }
