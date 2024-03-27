@@ -641,6 +641,7 @@ class SparkContext(config: SparkConf) extends Logging {
     _conf.set("spark.app.id", _applicationId)
     _applicationAttemptId.foreach { attemptId =>
       _conf.set(APP_ATTEMPT_ID, attemptId)
+      //获取block客户端设置attemptId
       _env.blockManager.blockStoreClient.setAppAttemptId(attemptId)
     }
 
@@ -655,6 +656,8 @@ class SparkContext(config: SparkConf) extends Logging {
       System.setProperty("spark.ui.proxyBase", proxyUrl + "/proxy/" + _applicationId)
     }
     _ui.foreach(_.setAppId(_applicationId))
+
+    // 初始化blockManger
     _env.blockManager.initialize(_applicationId)
     FallbackStorage.registerBlockManagerIfNeeded(_env.blockManager.master, _conf)
 
@@ -662,6 +665,7 @@ class SparkContext(config: SparkConf) extends Logging {
     // So it should start after we get app ID from the task scheduler and set spark.app.id.
     _env.metricsSystem.start(_conf.get(METRICS_STATIC_SOURCES_ENABLED))
 
+    //初始化EventLogger
     _eventLogger =
       if (isEventLogEnabled) {
         val logger =
@@ -682,6 +686,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     _cleaner.foreach(_.start())
 
+    // 判断是否开启动态Executor申请
     val dynamicAllocationEnabled = Utils.isDynamicAllocationEnabled(_conf)
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
@@ -697,10 +702,14 @@ class SparkContext(config: SparkConf) extends Logging {
       } else {
         None
       }
+    // 申请Executor个数
     _executorAllocationManager.foreach(_.start())
 
+    //初始化其他监听器，注册到监听总线中，并启动监听总线
     setupAndStartListenerBus()
+    //发送环境更新的监听事件
     postEnvironmentUpdate()
+    //发送Application启动的事件
     postApplicationStart()
 
     // After application started, attach handlers to started server and start handler.
@@ -724,6 +733,8 @@ class SparkContext(config: SparkConf) extends Logging {
     }
 
     // Post init
+    // org.apache.spark.scheduler.cluster.YarnClusterScheduler.postStartHook
+    // 启动taskScheduler
     _taskScheduler.postStartHook()
     if (isLocal) {
       _env.metricsSystem.registerSource(Executor.executorSourceLocalModeOnly)
@@ -2799,6 +2810,7 @@ class SparkContext(config: SparkConf) extends Logging {
    */
   private def setupAndStartListenerBus(): Unit = {
     try {
+      // 初始化其他的监听器，并注册到监听总线中
       conf.get(EXTRA_LISTENERS).foreach { classNames =>
         val listeners = Utils.loadExtensions(classOf[SparkListenerInterface], classNames, conf)
         listeners.foreach { listener =>
@@ -2815,6 +2827,7 @@ class SparkContext(config: SparkConf) extends Logging {
         }
     }
 
+    // 启动监听器
     listenerBus.start(this, _env.metricsSystem)
     _listenerBusStarted = true
   }

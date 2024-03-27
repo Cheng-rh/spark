@@ -142,6 +142,7 @@ class ResourceProfile(
   // available or 1 if no other resources. You need to check the isCoresLimitKnown to
   // calculate proper value.
   private[spark] def maxTasksPerExecutor(sparkConf: SparkConf): Int = {
+    //获取每个Executor最大的task数
     _maxTasksPerExecutor.getOrElse {
       calculateTasksAndLimitingResource(sparkConf)
       _maxTasksPerExecutor.get

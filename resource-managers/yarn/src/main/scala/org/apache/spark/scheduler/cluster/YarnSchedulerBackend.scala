@@ -144,11 +144,13 @@ private[spark] abstract class YarnSchedulerBackend(
 
   private[cluster] def prepareRequestExecutors(
       resourceProfileToTotalExecs: Map[ResourceProfile, Int]): RequestExecutors = {
+    // 先获取排除的节点
     val excludedNodes: Set[String] = scheduler.excludedNodes()
     // For locality preferences, ignore preferences for nodes that are excluded
     val filteredRPHostToLocalTaskCount = rpHostToLocalTaskCount.map { case (rpid, v) =>
       (rpid, v.filter { case (host, count) => !excludedNodes.contains(host) })
     }
+    // 初始化Executor的请求
     RequestExecutors(resourceProfileToTotalExecs, numLocalityAwareTasksPerResourceProfileId,
       filteredRPHostToLocalTaskCount, excludedNodes)
   }
@@ -159,6 +161,7 @@ private[spark] abstract class YarnSchedulerBackend(
    */
   override def doRequestTotalExecutors(
       resourceProfileToTotalExecs: Map[ResourceProfile, Int]): Future[Boolean] = {
+    //申请启动Executor（org.apache.spark.scheduler.cluster.YarnSchedulerBackend.YarnSchedulerEndpoint.receiveAndReply）
     yarnSchedulerEndpointRef.ask[Boolean](prepareRequestExecutors(resourceProfileToTotalExecs))
   }
 
@@ -356,6 +359,7 @@ private[spark] abstract class YarnSchedulerBackend(
 
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
       case r: RequestExecutors =>
+        // 底层是通过调用AM实现
         amEndpoint match {
           case Some(am) =>
             am.ask[Boolean](r).andThen {

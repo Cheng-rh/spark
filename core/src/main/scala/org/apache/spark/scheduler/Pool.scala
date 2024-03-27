@@ -96,6 +96,7 @@ private[spark] class Pool(
 
   override def checkSpeculatableTasks(minTimeToSpeculation: Long): Boolean = {
     var shouldRevive = false
+    //判断任务是否需要重新计算（推测计算，超出执行时间范围，会起另一个程序开始运行该分区的数据，）
     for (schedulable <- schedulableQueue.asScala) {
       shouldRevive |= schedulable.checkSpeculatableTasks(minTimeToSpeculation)
     }

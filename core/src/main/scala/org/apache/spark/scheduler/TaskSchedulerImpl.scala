@@ -236,7 +236,7 @@ private[spark] class TaskSchedulerImpl(
   override def start(): Unit = {
     //任务调度后端
     backend.start()
-
+    //非local模式，且需要开启推测执行线程。
     if (!isLocal && conf.get(SPECULATION_ENABLED)) {
       logInfo("Starting speculative execution thread")
       speculationScheduler.scheduleWithFixedDelay(
@@ -1178,9 +1178,13 @@ private[spark] class TaskSchedulerImpl(
   }
 
   private def waitBackendReady(): Unit = {
+    // 判断资源是否准备就绪
     if (backend.isReady()) {
       return
     }
+    //循环等待知道资源就绪,此时用户代码不会往下执行
+    //那什么时候driver线程会继续执行?
+    //当rundrive方法调用resumeDriver,改变backend 状态,代表资源就绪
     while (!backend.isReady()) {
       // Might take a while for backend to be ready if it is waiting on resources.
       if (sc.stopped.get) {

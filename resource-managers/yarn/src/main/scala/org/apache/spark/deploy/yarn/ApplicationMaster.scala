@@ -151,6 +151,7 @@ private[spark] class ApplicationMaster(
         size: String,
         vis: String): Unit = {
       val uri = new URI(file)
+      //封装amJars的资源配置
       val amJarRsrc = Records.newRecord(classOf[LocalResource])
       amJarRsrc.setType(rtype)
       amJarRsrc.setVisibility(LocalResourceVisibility.valueOf(vis))
@@ -162,6 +163,7 @@ private[spark] class ApplicationMaster(
       resources(fileName) = amJarRsrc
     }
 
+    // 获取__spark_dist_cache__.properites配置文件中的相关内容
     val distFiles = distCacheConf.get(CACHED_FILES)
     val fileSizes = distCacheConf.get(CACHED_FILES_SIZES)
     val timeStamps = distCacheConf.get(CACHED_FILES_TIMESTAMPS)
@@ -170,6 +172,7 @@ private[spark] class ApplicationMaster(
 
     for (i <- distFiles.indices) {
       val resType = LocalResourceType.valueOf(resTypes(i))
+      //准备分布式缓冲
       setupDistributedCache(distFiles(i), resType, timeStamps(i).toString, fileSizes(i).toString,
       visibilities(i))
     }
@@ -407,14 +410,17 @@ private[spark] class ApplicationMaster(
   private def sparkContextInitialized(sc: SparkContext) = {
     sparkContextPromise.synchronized {
       // Notify runDriver function that SparkContext is available
+      // 唤醒SparkContext中的runDriver 函数
       sparkContextPromise.success(sc)
       // Pause the user class thread in order to make proper initialization in runDriver function.
+      // 暂停用户线程，保证runDriver函数正确的初始化
       sparkContextPromise.wait()
     }
   }
 
   private def resumeDriver(): Unit = {
     // When initialization in runDriver happened the user class thread has to be resumed.
+    // 唤醒Driver线程
     sparkContextPromise.synchronized {
       sparkContextPromise.notify()
     }
@@ -455,8 +461,10 @@ private[spark] class ApplicationMaster(
     }
 
     val appId = appAttemptId.getApplicationId().toString()
+    // 初始化Driver的RpcEndpointAddress
     val driverUrl = RpcEndpointAddress(driverRef.address.host, driverRef.address.port,
       CoarseGrainedSchedulerBackend.ENDPOINT_NAME).toString
+    // 准备本地资源
     val localResources = prepareLocalResources(distCacheConf)
 
     // Before we initialize the allocator, let's log the information about how executors will
@@ -471,6 +479,7 @@ private[spark] class ApplicationMaster(
       dummyRunner.launchContextDebugInfo()
     }
 
+    // 创建分配器
     allocator = client.createAllocator(
       yarnConf,
       _sparkConf,
@@ -483,12 +492,15 @@ private[spark] class ApplicationMaster(
     // Initialize the AM endpoint *after* the allocator has been initialized. This ensures
     // that when the driver sends an initial executor request (e.g. after an AM restart),
     // the allocator is ready to service requests.
+    // 初始化AMEndpoint，用来接收Driver发送初始化Executor的请求
     rpcEnv.setupEndpoint("YarnAM", new AMEndpoint(rpcEnv, driverRef))
     if (_sparkConf.get(SHUFFLE_SERVICE_ENABLED)) {
       logInfo("Initializing service data for shuffle service using name '" +
         s"${_sparkConf.get(SHUFFLE_SERVICE_NAME)}'")
     }
+    // 获取可用的资源列表
     allocator.allocateResources()
+
     val ms = MetricsSystem.createMetricsSystem(MetricsSystemInstances.APPLICATION_MASTER, sparkConf)
     val prefix = _sparkConf.get(YARN_METRICS_NAMESPACE).getOrElse(appId)
     ms.registerSource(new ApplicationMasterSource(prefix, allocator))
@@ -509,8 +521,10 @@ private[spark] class ApplicationMaster(
     logInfo("Waiting for spark context initialization...")
     val totalWaitTime = sparkConf.get(AM_MAX_WAIT_TIME)
     try {
+      //等待startUserApplication的中driver线程将用户代码sparkContext的创建完成,否则一直阻塞在这里
       val sc = ThreadUtils.awaitResult(sparkContextPromise.future,
         Duration(totalWaitTime, TimeUnit.MILLISECONDS))
+      // 如果SparkContext不为空，则注册AM
       if (sc != null) {
         val rpcEnv = sc.env.rpcEnv
 
@@ -524,14 +538,16 @@ private[spark] class ApplicationMaster(
           RpcAddress(host, port),
           YarnSchedulerBackend.ENDPOINT_NAME)
 
-        //初始化申请
+        //创建分配器,返回资源可用列表
         createAllocator(driverRef, userConf, rpcEnv, appAttemptId, distCacheConf())
       } else {
         // Sanity check; should never happen in normal operation, since sc should only be null
         // if the user app did not create a SparkContext.
         throw new IllegalStateException("User did not initialize spark context!")
       }
+      //当资源准备就绪,调用resumeDriver方法,改变状态,让driver线程继续执行(用户代码逻辑)
       resumeDriver()
+      //最后等待driver线程执行完成
       userClassThread.join()
     } catch {
       case e: SparkException if e.getCause().isInstanceOf[TimeoutException] =>

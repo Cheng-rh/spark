@@ -153,10 +153,13 @@ private[spark] class SparkHadoopUtil extends Logging {
    * also confirms correct hadoop configuration is set.
    */
   private[spark] def addDelegationTokens(tokens: Array[Byte], sparkConf: SparkConf): Unit = {
+    // UGI设置配置
     UserGroupInformation.setConfiguration(newConfiguration(sparkConf))
+    // 反序列化token, 解析Credentials
     val creds = deserialize(tokens)
     logInfo("Updating delegation tokens for current user.")
     logDebug(s"Adding/updating delegation tokens ${dumpTokens(creds)}")
+    // 添加credentials
     addCurrentUserCredentials(creds)
   }
 

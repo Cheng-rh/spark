@@ -2507,6 +2507,7 @@ private[spark] object Utils
    * Return the initial number of executors for dynamic allocation.
    */
   def getDynamicAllocationInitialExecutors(conf: SparkConf): Int = {
+    // 获取初始化Executor个数
     if (conf.get(DYN_ALLOCATION_INITIAL_EXECUTORS) < conf.get(DYN_ALLOCATION_MIN_EXECUTORS)) {
       logWarning(s"${DYN_ALLOCATION_INITIAL_EXECUTORS.key} less than " +
         s"${DYN_ALLOCATION_MIN_EXECUTORS.key} is invalid, ignoring its setting, " +

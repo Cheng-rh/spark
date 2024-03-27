@@ -117,10 +117,12 @@ private[spark] class ExecutorMonitor(
 
       var newNextTimeout = Long.MaxValue
       timedOutExecs = executors.asScala
+        // 过滤正在remove的，还正在shuffle的，没有退役的Executor
         .filter { case (_, exec) =>
           !exec.pendingRemoval && !exec.hasActiveShuffle && !exec.decommissioning}
         .filter { case (_, exec) =>
           val deadline = exec.timeoutAt
+          // 如果过期时间大于当前时间，说明executor还没有过期
           if (deadline > now) {
             newNextTimeout = math.min(newNextTimeout, deadline)
             exec.timedOut = false

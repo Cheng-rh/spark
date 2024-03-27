@@ -104,6 +104,7 @@ private[spark] class HadoopDelegationTokenManager(
     renewalExecutor =
       ThreadUtils.newDaemonSingleThreadScheduledExecutor("Credential Renewal Thread")
 
+    //获取当前用户
     val ugi = UserGroupInformation.getCurrentUser()
     if (ugi.isFromKeytab()) {
       // In Hadoop 2.x, renewal of the keytab-based login seems to be automatic, but in Hadoop 3.x,
@@ -117,10 +118,12 @@ private[spark] class HadoopDelegationTokenManager(
         }
       }
       val tgtRenewalPeriod = sparkConf.get(KERBEROS_RELOGIN_PERIOD)
+      //启动周期 renew token
       renewalExecutor.scheduleAtFixedRate(tgtRenewalTask, tgtRenewalPeriod, tgtRenewalPeriod,
         TimeUnit.SECONDS)
     }
 
+    //更新token task
     updateTokensTask()
   }
 
@@ -198,11 +201,14 @@ private[spark] class HadoopDelegationTokenManager(
    */
   private def updateTokensTask(): Array[Byte] = {
     try {
+      //认证
       val freshUGI = doLogin()
+      //获取creds和token
       val creds = obtainTokensAndScheduleRenewal(freshUGI)
       val tokens = SparkHadoopUtil.get.serialize(creds)
 
       logInfo("Updating delegation tokens.")
+      //更新token(org.apache.spark.scheduler.cluster.CoarseGrainedSchedulerBackend.DriverEndpoint)
       schedulerRef.send(UpdateDelegationTokens(tokens))
       tokens
     } catch {

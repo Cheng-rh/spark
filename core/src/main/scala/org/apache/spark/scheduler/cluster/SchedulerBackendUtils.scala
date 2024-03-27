@@ -31,9 +31,13 @@ private[spark] object SchedulerBackendUtils {
   def getInitialTargetExecutorNumber(
       conf: SparkConf,
       numExecutors: Int = DEFAULT_NUMBER_EXECUTORS): Int = {
+    // 是否开启动态扩展Executor
     if (Utils.isDynamicAllocationEnabled(conf)) {
+      // 最小Executor个数
       val minNumExecutors = conf.get(DYN_ALLOCATION_MIN_EXECUTORS)
+      // 获取初始化Executor个数
       val initialNumExecutors = Utils.getDynamicAllocationInitialExecutors(conf)
+      // 最大Executor个数
       val maxNumExecutors = conf.get(DYN_ALLOCATION_MAX_EXECUTORS)
       require(initialNumExecutors >= minNumExecutors && initialNumExecutors <= maxNumExecutors,
         s"initial executor number $initialNumExecutors must between min executor number " +

@@ -556,11 +556,13 @@ private[spark] class BlockManager(
       }
     }
 
+    // 初始化BlockManager
     val id =
       BlockManagerId(executorId, blockTransferService.hostName, blockTransferService.port, None)
 
     // The idFromMaster has just additional topology information. Otherwise, it has the same
     // executor id/host/port of idWithoutTopologyInfo which is not expected to be changed.
+    // 注册BlockManager
     val idFromMaster = master.registerBlockManager(
       id,
       diskBlockManager.localDirsString,

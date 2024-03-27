@@ -608,11 +608,15 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   }
 
   override def start(): Unit = {
+    //初始化UGI
     if (UserGroupInformation.isSecurityEnabled()) {
+      //初始化相应的delegation token manager
       delegationTokenManager = createTokenManager()
       delegationTokenManager.foreach { dtm =>
         val ugi = UserGroupInformation.getCurrentUser()
+        //判断是否允许renew
         val tokens = if (dtm.renewalEnabled) {
+          //启动delegation token manager
           dtm.start()
         } else {
           val creds = ugi.getCredentials()
@@ -833,25 +837,32 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
       numLocalityAwareTasksPerResourceProfileId: Map[Int, Int],
       hostToLocalTaskCount: Map[Int, Map[String, Int]]
   ): Boolean = {
+    // rpid对应的Executor个数
     val totalExecs = resourceProfileIdToNumExecutors.values.sum
     if (totalExecs < 0) {
       throw new IllegalArgumentException(
         "Attempted to request a negative number of executor(s) " +
           s"$totalExecs from the cluster manager. Please specify a positive number!")
     }
+    // resource资源对应的Executor个数
     val resourceProfileToNumExecutors = resourceProfileIdToNumExecutors.map { case (rpid, num) =>
+      // (resourceProfile, executor个数)
       (scheduler.sc.resourceProfileManager.resourceProfileFromId(rpid), num)
     }
     val response = synchronized {
+      //获取旧的（resourceProfile, executor）
       val oldResourceProfileToNumExecutors = requestedTotalExecutorsPerResourceProfile.map {
         case (rp, num) =>
           (rp.id, num)
       }.toMap
       this.requestedTotalExecutorsPerResourceProfile.clear()
+      // 新的(resourceProfile, executor)
       this.requestedTotalExecutorsPerResourceProfile ++= resourceProfileToNumExecutors
       this.numLocalityAwareTasksPerResourceProfileId = numLocalityAwareTasksPerResourceProfileId
       this.rpHostToLocalTaskCount = hostToLocalTaskCount
+      // 更新请求个数
       updateExecRequestTimes(oldResourceProfileToNumExecutors, resourceProfileIdToNumExecutors)
+      //启动Executor个数
       doRequestTotalExecutors(requestedTotalExecutorsPerResourceProfile.toMap)
     }
     defaultAskTimeout.awaitResult(response)
@@ -860,6 +871,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   private def updateExecRequestTimes(oldProfile: Map[Int, Int], newProfile: Map[Int, Int]): Unit = {
     newProfile.map {
       case (k, v) =>
+        // executor前后变化
         val delta = v - oldProfile.getOrElse(k, 0)
         if (delta != 0) {
           updateExecRequestTime(k, delta)
@@ -868,9 +880,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   }
 
   private def updateExecRequestTime(profileId: Int, delta: Int) = {
+    // 初始化执行请求时间（变化值， 请求时间）
     val times = execRequestTimes.getOrElseUpdate(profileId, Queue[(Int, Long)]())
     if (delta > 0) {
       // Add the request to the end, constant time op
+      // 如果是增加Executor个数，则记录（增加个数，当前操作时间）
       times += ((delta, System.currentTimeMillis()))
     } else if (delta < 0) {
       // Consume as if |delta| had been allocated
@@ -878,12 +892,16 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
       // Note: it's possible that something else allocated an executor and we have
       // a negative delta, we can just avoid mutating the queue.
       while (toConsume > 0 && times.nonEmpty) {
+        // 取出之前添加Executor时的记录（增加个数，操作时间）
         val h = times.dequeue()
+        // 如果增加个数 大于 需要回收个数
         if (h._1 > toConsume) {
           // Prepend updated first req to times, constant time op
+          // 只需要更新其变化值
           ((h._1 - toConsume, h._2)) +=: times
           toConsume = 0
         } else {
+          //则继续追溯前一个添加Executor请求
           toConsume = toConsume - h._1
         }
       }
@@ -1045,6 +1063,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   protected def updateDelegationTokens(tokens: Array[Byte]): Unit = {
     SparkHadoopUtil.get.addDelegationTokens(tokens, conf)
     delegationTokens.set(tokens)
+    //每个Executor节点，更新token
     executorDataMap.values.foreach { ed =>
       ed.executorEndpoint.send(UpdateDelegationTokens(tokens))
     }
