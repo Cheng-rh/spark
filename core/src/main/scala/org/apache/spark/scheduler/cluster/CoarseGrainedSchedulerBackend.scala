@@ -716,11 +716,14 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   def sufficientResourcesRegistered(): Boolean = true
 
   override def isReady(): Boolean = {
+    // 判断是否注册足够的资源
     if (sufficientResourcesRegistered()) {
       logInfo("SchedulerBackend is ready for scheduling beginning after " +
         s"reached minRegisteredResourcesRatio: $minRegisteredRatio")
       return true
     }
+
+    // 判断时间是否超过注册等待时间
     if ((System.nanoTime() - createTimeNs) >= maxRegisteredWaitingTimeNs) {
       logInfo("SchedulerBackend is ready for scheduling beginning after waiting " +
         s"maxRegisteredResourcesWaitingTime: $maxRegisteredWaitingTimeNs(ns)")
@@ -871,7 +874,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   private def updateExecRequestTimes(oldProfile: Map[Int, Int], newProfile: Map[Int, Int]): Unit = {
     newProfile.map {
       case (k, v) =>
-        // executor前后变化
+        // executor个数前后变化
         val delta = v - oldProfile.getOrElse(k, 0)
         if (delta != 0) {
           updateExecRequestTime(k, delta)

@@ -1184,7 +1184,7 @@ private[spark] class TaskSchedulerImpl(
     }
     //循环等待知道资源就绪,此时用户代码不会往下执行
     //那什么时候driver线程会继续执行?
-    //当rundrive方法调用resumeDriver,改变backend 状态,代表资源就绪
+    //当ApplicationMaster注册好Executor，资源就绪
     while (!backend.isReady()) {
       // Might take a while for backend to be ready if it is waiting on resources.
       if (sc.stopped.get) {

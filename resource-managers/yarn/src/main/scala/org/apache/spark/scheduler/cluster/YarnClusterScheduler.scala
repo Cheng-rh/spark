@@ -31,7 +31,8 @@ private[spark] class YarnClusterScheduler(sc: SparkContext) extends YarnSchedule
   override def postStartHook(): Unit = {
     //标记SparkContext初始化完成
     ApplicationMaster.sparkContextInitialized(sc)
-    //等待任务调度后台初始化成功
+    //rundrive方法调用resumeDriver, 开始继续执行
+    //一直等待Execuotr资源注册好之后，才开始往下执行
     super.postStartHook()
     logInfo("YarnClusterScheduler.postStartHook done")
   }

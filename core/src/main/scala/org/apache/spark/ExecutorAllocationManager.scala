@@ -147,6 +147,7 @@ private[spark] class ExecutorAllocationManager(
   // Note every profile will be allowed to have initial number,
   // we may want to make this configurable per Profile in the future
   private[spark] val numExecutorsTargetPerResourceProfileId = new mutable.HashMap[Int, Int]
+  //rpid ---- 需要初始化Executor个数
   numExecutorsTargetPerResourceProfileId(defaultProfileId) = initialNumExecutors
 
   // A timestamp of when an addition should be triggered, or NOT_SET if it is not set
@@ -246,7 +247,7 @@ private[spark] class ExecutorAllocationManager(
       override def run(): Unit = Utils.tryLog(schedule())
     }
 
-    // 线程池周期执行，监控是否要停止executor
+    // 线程池周期执行，判断增加或者减少Executor逻辑
     if (!testing || conf.get(TEST_DYNAMIC_ALLOCATION_SCHEDULE_ENABLED)) {
       executor.scheduleWithFixedDelay(scheduleTask, 0, intervalMillis, TimeUnit.MILLISECONDS)
     }
@@ -519,7 +520,7 @@ private[spark] class ExecutorAllocationManager(
     val oldNumExecutorsTarget = numExecutorsTargetPerResourceProfileId(rpId)
     // 更新rpID对应的Executor个数: math.max（需要最大的Executor, 最小申请的Executor）
     numExecutorsTargetPerResourceProfileId(rpId) = math.max(maxNeeded, minNumExecutors)
-    // 因为需要回收Executor个数，所以其增加个数计为1
+    // 下一轮不需要增加executor个数，所以计为1
     numExecutorsToAddPerResourceProfileId(rpId) = 1
     // 需要最大Executor个数 - 旧的需要初始话的Executor个数
     numExecutorsTargetPerResourceProfileId(rpId) - oldNumExecutorsTarget

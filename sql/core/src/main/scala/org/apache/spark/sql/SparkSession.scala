@@ -1121,10 +1121,14 @@ object SparkSession extends Logging {
           // Do not update `SparkConf` for existing `SparkContext`, as it's shared by all sessions.
         }
 
+        //开始SparkSessionExtensionsProvider加载extentions
         loadExtensions(extensions)
         applyExtensions(sparkContext, extensions)
 
+        // 初始化SparkSession
         session = new SparkSession(sparkContext, None, None, extensions, options.toMap)
+
+        // 设置默认和活跃的session
         setDefaultSession(session)
         setActiveSession(session)
         registerContextListener(sparkContext)
@@ -1381,8 +1385,11 @@ object SparkSession extends Logging {
   private def applyExtensions(
       sparkContext: SparkContext,
       extensions: SparkSessionExtensions): SparkSessionExtensions = {
+    // 从spark-default.conf默认配置中获取 extensions 类
     val extensionConfClassNames = sparkContext.getConf.get(StaticSQLConf.SPARK_SESSION_EXTENSIONS)
       .getOrElse(Seq.empty)
+
+    // 对extensions类，遍历操作
     extensionConfClassNames.foreach { extensionConfClassName =>
       try {
         val extensionConfClass = Utils.classForName(extensionConfClassName)

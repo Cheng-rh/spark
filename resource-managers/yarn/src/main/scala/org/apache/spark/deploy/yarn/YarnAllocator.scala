@@ -430,13 +430,14 @@ private[yarn] class YarnAllocator(
    * This must be synchronized because variables read in this method are mutated by other methods.
    */
   def allocateResources(): Unit = synchronized {
+    //更新资源请求
     updateResourceRequests()
 
     val progressIndicator = 0.1f
     // Poll the ResourceManager. This doubles as a heartbeat if there are no pending container
     // requests.
+    //申请资源，并获取的container
     val allocateResponse = amClient.allocate(progressIndicator)
-
     val allocatedContainers = allocateResponse.getAllocatedContainers()
     allocatorNodeHealthTracker.setNumClusterNodes(allocateResponse.getNumClusterNodes)
 
@@ -452,7 +453,7 @@ private[yarn] class YarnAllocator(
           getNumExecutorsRunning,
           getNumExecutorsStarting,
           allocateResponse.getAvailableResources))
-
+      // 处理申请好的Container
       handleAllocatedContainers(allocatedContainers.asScala.toSeq)
     }
 
@@ -489,7 +490,9 @@ private[yarn] class YarnAllocator(
    * Visible for testing.
    */
   def updateResourceRequests(): Unit = synchronized {
+    //获取（resourceProfileID, pending申请container的请求）
     val pendingAllocatePerResourceProfileId = getPendingAllocate
+
     val missingPerProfile = targetNumExecutorsPerResourceProfileId.map { case (rpId, targetNum) =>
       val starting = getOrUpdateNumExecutorsStartingForRPId(rpId).get
       val pending = pendingAllocatePerResourceProfileId.getOrElse(rpId, Seq.empty).size

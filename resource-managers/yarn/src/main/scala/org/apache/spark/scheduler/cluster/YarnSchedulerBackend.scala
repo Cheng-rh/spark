@@ -173,6 +173,7 @@ private[spark] abstract class YarnSchedulerBackend(
   }
 
   override def sufficientResourcesRegistered(): Boolean = {
+    // 判断注册Executor的个数是否超过 期望注册个数 * 最小注册的比率
     totalRegisteredExecutors.get() >= totalExpectedExecutors * minRegisteredRatio
   }
 
