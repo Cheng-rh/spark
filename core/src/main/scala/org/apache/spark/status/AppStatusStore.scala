@@ -853,7 +853,7 @@ private[spark] object AppStatusStore extends Logging {
   /**
    * Create an in-memory store for a live application.
    */
-  def createLiveStore(
+  def creatLiveStore(
       conf: SparkConf,
       appStatusSource: Option[AppStatusSource] = None): AppStatusStore = {
 

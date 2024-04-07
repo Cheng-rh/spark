@@ -102,6 +102,7 @@ private class AsyncEventQueue(
     while (next != POISON_PILL) {
       val ctx = processingTime.time()
       try {
+        //处理事件
         super.postToAll(next)
       } finally {
         ctx.stop()
@@ -154,11 +155,13 @@ private class AsyncEventQueue(
       return
     }
 
+    //将事件提交到eventQueue中
     eventCount.incrementAndGet()
     if (eventQueue.offer(event)) {
       return
     }
 
+    //未提交成功处理
     eventCount.decrementAndGet()
     droppedEvents.inc()
     droppedEventsCounter.incrementAndGet()

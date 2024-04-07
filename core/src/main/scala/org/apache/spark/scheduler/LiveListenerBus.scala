@@ -93,6 +93,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
       throw new IllegalStateException("LiveListenerBus is stopped.")
     }
 
+    // 如果已经包含队列的类型，则直接将监听器添加到队列中，否则的话new 并添加
     queues.asScala.find(_.name == queue) match {
       case Some(queue) =>
         queue.addListener(listener)
@@ -123,6 +124,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
   }
 
   /** Post an event to all queues. */
+  // 在post方法中，会判断总线是否启动及投递
   def post(event: SparkListenerEvent): Unit = {
     if (stopped.get()) {
       return
@@ -133,6 +135,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
     // If the event buffer is null, it means the bus has been started and we can avoid
     // synchronization and post events directly to the queues. This should be the most
     // common case during the life of the bus.
+    // 总线已经启动，缓存队列queuedEvents已置为null，则直接投递
     if (queuedEvents == null) {
       postToQueues(event)
       return
@@ -142,6 +145,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
     // calling start() picks up the new event.
     synchronized {
       if (!started.get()) {
+        // 总线未启动，则将事件先放入缓存队列
         queuedEvents += event
         return
       }
@@ -149,10 +153,12 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
 
     // If the bus was already started when the check above was made, just post directly to the
     // queues.
+    // 投递事件
     postToQueues(event)
   }
 
   private def postToQueues(event: SparkListenerEvent): Unit = {
+    // 四种类型监听器的queues不为空，则遍历提交事件
     val it = queues.iterator()
     while (it.hasNext()) {
       it.next().post(event)
@@ -168,12 +174,16 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
    *
    * @param sc Used to stop the SparkContext in case the listener thread dies.
    */
+
+  // 在SparkContext中会调用事件的start方法启动总线
   def start(sc: SparkContext, metricsSystem: MetricsSystem): Unit = synchronized {
+    // 标记总线为已启动
     if (!started.compareAndSet(false, true)) {
       throw new IllegalStateException("LiveListenerBus already started.")
     }
 
     this.sparkContext = sc
+    // 总线启动后，将queuedEvents缓存队列投递后清空
     queues.asScala.foreach { q =>
       q.start(sc)
       queuedEvents.foreach(q.post)
