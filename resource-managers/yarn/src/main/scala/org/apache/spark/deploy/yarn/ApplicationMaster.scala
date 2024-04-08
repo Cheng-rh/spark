@@ -589,6 +589,7 @@ private[spark] class ApplicationMaster(
     // The number of failures in a row until the allocation thread gives up.
     val reporterMaxFailures = sparkConf.get(MAX_REPORTER_THREAD_FAILURES)
     var failureCount = 0
+    // 只要ApplicationMaster没有结束，就一直循环
     while (!finished) {
       try {
         if (allocator.getNumExecutorsFailed >= maxNumExecutorFailures) {
@@ -600,6 +601,7 @@ private[spark] class ApplicationMaster(
             ApplicationMaster.EXIT_MAX_EXECUTOR_FAILURES,
             "Due to executor failures all available nodes are excluded")
         } else {
+          // 开始真正的申请资源
           logDebug("Sending progress")
           allocator.allocateResources()
         }
@@ -626,29 +628,39 @@ private[spark] class ApplicationMaster(
           }
       }
       try {
+        // 阻塞申请container个数
         val numPendingAllocate = allocator.getNumContainersPendingAllocate
+        // 线程sleep启动时间
         var sleepStartNs = 0L
+        // 线程sleep间隔时间
         var sleepInterval = 200L // ms
         allocatorLock.synchronized {
           sleepInterval =
+            // 如果阻塞申请container个数大于0 或者 阻塞申请丢失响应的个数
             if (numPendingAllocate > 0 || allocator.getNumPendingLossReasonRequests > 0) {
+              // 当前申请间隔为：heartbeatInterval或者nextAllocationInterval的最小值
               val currentAllocationInterval =
                 math.min(heartbeatInterval, nextAllocationInterval)
+              // 下一次申请时间间隔扩大2倍
               nextAllocationInterval = currentAllocationInterval * 2 // avoid overflow
               currentAllocationInterval
             } else {
+              //否则的话，下一次申请时间间隔为初始化申请时间间隔。
               nextAllocationInterval = initialAllocationInterval
               heartbeatInterval
             }
+          // 记录线程休眠时间，并开始休眠
           sleepStartNs = System.nanoTime()
           allocatorLock.wait(sleepInterval)
         }
+        // 如果休眠中断导致时间小于指定的休眠时间
         val sleepDuration = System.nanoTime() - sleepStartNs
         if (sleepDuration < TimeUnit.MILLISECONDS.toNanos(sleepInterval)) {
           // log when sleep is interrupted
           logDebug(s"Number of pending allocations is $numPendingAllocate. " +
               s"Slept for $sleepDuration/$sleepInterval ms.")
           // if sleep was less than the minimum interval, sleep for the rest of it
+          // 获取还需要休眠的时间，并继续休眠
           val toSleep = math.max(0, initialAllocationInterval - sleepDuration)
           if (toSleep > 0) {
             logDebug(s"Going back to sleep for $toSleep ms")
@@ -667,16 +679,19 @@ private[spark] class ApplicationMaster(
     }
   }
 
+  // 启动Report线程
   private def launchReporterThread(): Thread = {
     val t = new Thread {
       override def run(): Unit = {
         try {
+          //调用申请资源实现
           allocationThreadImpl()
         } finally {
           allocator.stop()
         }
       }
     }
+    //守护线程
     t.setDaemon(true)
     t.setName("Reporter")
     t.start()
