@@ -127,13 +127,16 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
       if (stopped) {
         true
       } else {
+        // 将消息放在消息队列中
         messages.add(message)
         false
       }
     }
+
     if (dropped) {
       message.onFailure(new SparkException("Message is dropped because Outbox is stopped"))
     } else {
+      // 清空消息队列
       drainOutbox()
     }
   }
@@ -146,6 +149,7 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
   private def drainOutbox(): Unit = {
     var message: OutboxMessage = null
     synchronized {
+      // 如果已经停止，则直接返回
       if (stopped) {
         return
       }
@@ -153,6 +157,8 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
         // We are connecting to the remote address, so just exit
         return
       }
+
+      // 如果客户端为空，创建客户端
       if (client == null) {
         // There is no connect task but client is null, so we need to launch the connect task.
         launchConnectTask()
@@ -168,10 +174,12 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
       }
       draining = true
     }
+    // 循环发送消息队列中俄消息
     while (true) {
       try {
         val _client = synchronized { client }
         if (_client != null) {
+          // 发送消息
           message.sendWith(_client)
         } else {
           assert(stopped)
@@ -199,6 +207,7 @@ private[netty] class Outbox(nettyEnv: NettyRpcEnv, val address: RpcAddress) {
 
       override def call(): Unit = {
         try {
+          // 根据地址创建客户端
           val _client = nettyEnv.createClient(address)
           outbox.synchronized {
             client = _client

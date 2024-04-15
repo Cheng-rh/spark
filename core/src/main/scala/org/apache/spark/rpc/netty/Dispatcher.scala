@@ -36,9 +36,10 @@ import org.apache.spark.rpc._
  *                       If 0, will consider the available CPUs on the host.
  */
 private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) extends Logging {
-
+  // RpcEndpoint 名称与 MessageLoop 之间的映射关系
   private val endpoints: ConcurrentMap[String, MessageLoop] =
     new ConcurrentHashMap[String, MessageLoop]
+  // 端点实例 RpcEndpoint 与端点引用 RpcEndpointRef 之间的映射关系
   private val endpointRefs: ConcurrentMap[RpcEndpoint, RpcEndpointRef] =
     new ConcurrentHashMap[RpcEndpoint, RpcEndpointRef]
 
@@ -49,6 +50,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
    * True if the dispatcher has been stopped. Once stopped, all messages posted will be bounced
    * immediately.
    */
+  // Dispatcher 停止时为 true，一旦 Dispatcher 停止，所有发出去的消息都会被立即退回
   @GuardedBy("this")
   private var stopped = false
 
@@ -93,11 +95,13 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
     endpointRef
   }
 
+  // 根据 RpcEndpoint 获取其对应的 RpcEndpointRef
   def getRpcEndpointRef(endpoint: RpcEndpoint): RpcEndpointRef = endpointRefs.get(endpoint)
 
+  // 根据 RpcEndpoint 删除 RpcEndpoint 与 RpcEndpointRef 的映射缓存
   def removeRpcEndpointRef(endpoint: RpcEndpoint): Unit = endpointRefs.remove(endpoint)
 
-  // Should be idempotent
+  // 幂等的，多次执行的结果是一样的
   private def unregisterRpcEndpoint(name: String): Unit = {
     val loop = endpoints.remove(name)
     if (loop != null) {
@@ -108,6 +112,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
     // `removeRpcEndpointRef`.
   }
 
+  // 停止具体某个 RpcEndpoint
   def stop(rpcEndpointRef: RpcEndpointRef): Unit = {
     synchronized {
       if (stopped) {
@@ -123,6 +128,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
    *
    * This can be used to make network events known to all end points (e.g. "a new node connected").
    */
+  // 向当前进程中所有注册过的 RpcEndpoint 发送消息
   def postToAll(message: InboxMessage): Unit = {
     val iter = endpoints.keySet().iterator()
     while (iter.hasNext) {
@@ -135,6 +141,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
   }
 
   /** Posts a message sent by a remote endpoint. */
+  // 发布由 Remote RpcEndpoint 发送的消息
   def postRemoteMessage(message: RequestMessage, callback: RpcResponseCallback): Unit = {
     val rpcCallContext =
       new RemoteNettyRpcCallContext(nettyEnv, callback, message.senderAddress)
@@ -143,6 +150,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
   }
 
   /** Posts a message sent by a local endpoint. */
+  // 发布由 Local RpcEndpoint 发送的消息
   def postLocalMessage(message: RequestMessage, p: Promise[Any]): Unit = {
     val rpcCallContext =
       new LocalNettyRpcCallContext(message.senderAddress, p)
@@ -151,6 +159,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
   }
 
   /** Posts a one-way message. */
+  // 发布单向消息，不需要回复
   def postOneWayMessage(message: RequestMessage): Unit = {
     postMessage(message.receiver.name, OneWayMessage(message.senderAddress, message.content),
       {
@@ -172,25 +181,37 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
    * @param message the message to post
    * @param callbackIfStopped callback function if the endpoint is stopped.
    */
+
+  /**
+   * 向指定端点发送消息
+   *
+   * @param endpointName 端点名称
+   * @param message 需要发送的消息
+   * @param callbackIfStopped 如果端点已经停止，回调此函数
+   */
   private def postMessage(
       endpointName: String,
       message: InboxMessage,
       callbackIfStopped: (Exception) => Unit): Unit = {
     val error = synchronized {
+      // 根据端点名称获取对应的消息循环
       val loop = endpoints.get(endpointName)
       if (stopped) {
         Some(new RpcEnvStoppedException())
       } else if (loop == null) {
         Some(new SparkException(s"Could not find $endpointName."))
       } else {
+        // 如果当前 Dispatcher 不是停止状态
         loop.post(endpointName, message)
         None
       }
     }
     // We don't need to call `onStop` in the `synchronized` block
+    // 最后调用回调函数
     error.foreach(callbackIfStopped)
   }
 
+  // 停止 Dispatcher
   def stop(): Unit = {
     synchronized {
       if (stopped) {
@@ -199,6 +220,7 @@ private[netty] class Dispatcher(nettyEnv: NettyRpcEnv, numUsableCores: Int) exte
       stopped = true
     }
     var stopSharedLoop = false
+    // 对所有 RpcEndpoint 执行取消注册，并关闭 MessageLoop
     endpoints.asScala.foreach { case (name, loop) =>
       unregisterRpcEndpoint(name)
       if (!loop.isInstanceOf[SharedMessageLoop]) {

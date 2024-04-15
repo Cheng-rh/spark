@@ -29,19 +29,23 @@ import org.apache.spark.util.RpcUtils
  */
 private[spark] abstract class RpcEndpointRef(conf: SparkConf)
   extends Serializable with Logging {
-
+  // RPC 执行 ask 的默认超时时间，默认为120s
   private[this] val defaultAskTimeout = RpcUtils.askRpcTimeout(conf)
 
   /**
    * return the address for the [[RpcEndpointRef]]
    */
+  // 当前 RpcEndpointRef 对应的 RpcEndpoint 地址，虽然 用了 RpcAddress 包装
+  // 但本质上就是 spark://host:port
   def address: RpcAddress
 
+  // 当前 RpcEndpointRef 对应的 RpcEndpoint 名称
   def name: String
 
   /**
    * Sends a one-way asynchronous message. Fire-and-forget semantics.
    */
+  // 发送单向异步消息。即只负责发送，不关心对方是否收到，最多发送一次
   def send(message: Any): Unit
 
   /**
@@ -51,6 +55,8 @@ private[spark] abstract class RpcEndpointRef(conf: SparkConf)
    *
    * This method only sends the message once and never retries.
    */
+  // 向对应的 RpcEndpoint.receiveAndReply 发送消息并期望在指定的超时时间内收到回复
+  // 只发送一次，不会重试。精准一次。
   def askAbortable[T: ClassTag](message: Any, timeout: RpcTimeout): AbortableRpcFuture[T] = {
     throw new UnsupportedOperationException()
   }
@@ -61,6 +67,8 @@ private[spark] abstract class RpcEndpointRef(conf: SparkConf)
    *
    * This method only sends the message once and never retries.
    */
+  // 向对应的 RpcEndpoint.receiveAndReply 发送消息并期望在指定的超时时间内收到回复
+  // 只发送一次，不会重试。精准一次。
   def ask[T: ClassTag](message: Any, timeout: RpcTimeout): Future[T]
 
   /**
@@ -82,6 +90,9 @@ private[spark] abstract class RpcEndpointRef(conf: SparkConf)
    * @tparam T type of the reply message
    * @return the reply message from the corresponding [[RpcEndpoint]]
    */
+  // 向相应的 RpcEndpoint.receiveAndReply 发送消息，并在指定的超时时间内获取其结果，如果失败则抛出异常。
+  // 这是一个阻塞动作，可能会花费很多时间，所以不要在 RpcEndpoint 的消息循环中调用它。
+  // 返回的 T 为 RpcEndpoint 回复的消息
   def askSync[T: ClassTag](message: Any): T = askSync(message, defaultAskTimeout)
 
   /**

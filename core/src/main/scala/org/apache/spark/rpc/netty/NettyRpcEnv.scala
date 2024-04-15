@@ -65,6 +65,7 @@ private[netty] class NettyRpcEnv(
 
   private val streamManager = new NettyStreamManager(this)
 
+  //RPC服务端的Handler
   private val transportContext = new TransportContext(transportConf,
     new NettyRpcHandler(dispatcher, this, streamManager))
 
@@ -164,6 +165,7 @@ private[netty] class NettyRpcEnv(
     dispatcher.stop(endpointRef)
   }
 
+  // 将消息投递到 NettyRpcEndpointRef 对应的 Ouxbox 中
   private def postToOutbox(receiver: NettyRpcEndpointRef, message: OutboxMessage): Unit = {
     if (receiver.client != null) {
       message.sendWith(receiver.client)
@@ -172,6 +174,7 @@ private[netty] class NettyRpcEnv(
         "Cannot send message to client endpoint with no listen address.")
       val targetOutbox = {
         val outbox = outboxes.get(receiver.address)
+        // 如果地址对应的发件箱不存在，则先初始化
         if (outbox == null) {
           val newOutbox = new Outbox(this, receiver.address)
           val oldOutbox = outboxes.putIfAbsent(receiver.address, newOutbox)
@@ -181,6 +184,7 @@ private[netty] class NettyRpcEnv(
             oldOutbox
           }
         } else {
+          // 如果已经存在，则直接获取
           outbox
         }
       }
@@ -189,13 +193,16 @@ private[netty] class NettyRpcEnv(
         outboxes.remove(receiver.address)
         targetOutbox.stop()
       } else {
+        // 发件箱开始发消息
         targetOutbox.send(message)
       }
     }
   }
 
+  // 发送消息
   private[netty] def send(message: RequestMessage): Unit = {
     val remoteAddr = message.receiver.address
+    // 接受方和发送方都在统一个进程里，直接调用 dispatcher 发送消息，不需要走 RPC 网络传输
     if (remoteAddr == address) {
       // Message to a local RPC endpoint.
       try {
@@ -205,6 +212,7 @@ private[netty] class NettyRpcEnv(
       }
     } else {
       // Message to a remote RPC endpoint.
+      // 接受方和发送方不在统一个进程里
       postToOutbox(message.receiver, OneWayOutboxMessage(message.serialize(this)))
     }
   }
@@ -218,7 +226,7 @@ private[netty] class NettyRpcEnv(
     val promise = Promise[Any]()
     val remoteAddr = message.receiver.address
     var rpcMsg: Option[RpcOutboxMessage] = None
-
+    // 请求失败逻辑
     def onFailure(e: Throwable): Unit = {
       if (!promise.tryFailure(e)) {
         e match {
@@ -228,6 +236,7 @@ private[netty] class NettyRpcEnv(
       }
     }
 
+    //连接成功
     def onSuccess(reply: Any): Unit = reply match {
       case RpcFailure(e) => onFailure(e)
       case rpcReply =>
@@ -242,6 +251,7 @@ private[netty] class NettyRpcEnv(
     }
 
     try {
+      // 如果是本地，直接通过dispatcher分发
       if (remoteAddr == address) {
         val p = Promise[Any]()
         p.future.onComplete {
@@ -250,6 +260,7 @@ private[netty] class NettyRpcEnv(
         }(ThreadUtils.sameThread)
         dispatcher.postLocalMessage(message, p)
       } else {
+        // 否则将消息发给发件箱
         val rpcMessage = RpcOutboxMessage(message.serialize(this),
           onFailure,
           (client, response) => onSuccess(deserialize[Any](client, response)))

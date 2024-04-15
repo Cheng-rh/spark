@@ -291,12 +291,14 @@ private[spark] class Executor(
     executorMetricsSource)
 
   // Executor for the heartbeat task.
+  // 启动Executor心跳任务
   private val heartbeater = new Heartbeater(
     () => Executor.this.reportHeartBeat(),
     "executor-heartbeater",
     HEARTBEAT_INTERVAL_MS)
 
   // must be initialized before running startDriverHeartbeat()
+  //初始化Driver心跳端点的引用
   private val heartbeatReceiverRef =
     RpcUtils.makeDriverRef(HeartbeatReceiver.ENDPOINT_NAME, conf, env.rpcEnv)
 
@@ -1204,17 +1206,20 @@ private[spark] class Executor(
   }
 
   /** Reports heartbeat and metrics for active tasks to the driver. */
+  // 汇报心跳及当前活跃task的统计信息给driver
   private def reportHeartBeat(): Unit = {
     // list of (task id, accumUpdates) to send back to the driver
     val accumUpdates = new ArrayBuffer[(Long, Seq[AccumulatorV2[_, _]])]()
+    // 当前Executor进程整体的GC时间
     val curGCTime = computeTotalGcTime()
 
     if (pollOnHeartbeat) {
       metricsPoller.poll()
     }
 
+    // executor统计信息
     val executorUpdates = metricsPoller.getExecutorUpdates()
-
+    // 按任务统计信息
     for (taskRunner <- runningTasks.values().asScala) {
       if (taskRunner.task != null) {
         taskRunner.task.metrics.mergeShuffleReadMetrics()
@@ -1229,9 +1234,11 @@ private[spark] class Executor(
       }
     }
 
+    // 心跳消息
     val message = Heartbeat(executorId, accumUpdates.toArray, env.blockManager.blockManagerId,
       executorUpdates)
     try {
+      // 发送心跳消息
       val response = heartbeatReceiverRef.askSync[HeartbeatResponse](
         message, new RpcTimeout(HEARTBEAT_INTERVAL_MS.millis, EXECUTOR_HEARTBEAT_INTERVAL.key))
       if (!executorShutdown.get && response.reregisterBlockManager) {
