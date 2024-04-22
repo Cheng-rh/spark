@@ -66,6 +66,7 @@ private[spark] class BroadcastManager(
       value_ : T,
       isLocal: Boolean,
       serializedOnly: Boolean = false): Broadcast[T] = {
+    //广播变量id自增
     val bid = nextBroadcastId.getAndIncrement()
     value_ match {
       case pb: PythonBroadcast =>
@@ -77,6 +78,7 @@ private[spark] class BroadcastManager(
 
       case _ => // do nothing
     }
+    // 通过TorrentBroadcastFactory进行广播
     broadcastFactory.newBroadcast[T](value_, isLocal, bid, serializedOnly)
   }
 

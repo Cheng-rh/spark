@@ -1121,6 +1121,7 @@ private[spark] class BlockManager(
 
     // Because all the remote blocks are registered in driver, it is not necessary to ask
     // all the storage endpoints to get block status.
+    // 从BlockManagerMaster获取Block的位置信息
     val locationsAndStatusOption = master.getLocationsAndStatus(blockId, blockManagerId.host)
     if (locationsAndStatusOption.isEmpty) {
       logDebug(s"Block $blockId is unknown by block manager master")
@@ -1130,6 +1131,7 @@ private[spark] class BlockManager(
       val blockSize = locationsAndStatus.status.diskSize.max(locationsAndStatus.status.memSize)
 
       locationsAndStatus.localDirs.flatMap { localDirs =>
+        // 先从host相同的Executor中获取
         val blockDataOption =
           readDiskBlockFromSameHostExecutor(blockId, localDirs, locationsAndStatus.status.diskSize)
         val res = blockDataOption.flatMap { blockData =>
@@ -1145,6 +1147,7 @@ private[spark] class BlockManager(
           (if (res.isDefined) "successful." else "failed."))
         res
       }.orElse {
+        // 从远程中获取
         fetchRemoteManagedBuffer(blockId, blockSize, locationsAndStatus).map(bufferTransformer)
       }
     }
@@ -1623,9 +1626,11 @@ private[spark] class BlockManager(
       var iteratorFromFailedMemoryStorePut: Option[PartiallyUnrolledIterator[T]] = None
       // Size of the block in bytes
       var size = 0L
+      // 是否需要使用内存
       if (level.useMemory) {
         // Put it in memory first, even if it also has useDisk set to true;
         // We will drop it to disk later if the memory store can't hold it.
+        // 是否是非序列化
         if (level.deserialized) {
           memoryStore.putIteratorAsValues(blockId, iterator(), level.memoryMode, classTag) match {
             case Right(s) =>
@@ -1663,6 +1668,7 @@ private[spark] class BlockManager(
         }
 
       } else if (level.useDisk) {
+        // 是否磁盘保存
         diskStore.put(blockId) { channel =>
           val out = Channels.newOutputStream(channel)
           serializerManager.dataSerializeStream(blockId, out, iterator())(classTag)

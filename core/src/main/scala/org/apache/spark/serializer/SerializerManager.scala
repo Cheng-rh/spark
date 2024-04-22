@@ -88,6 +88,7 @@ private[spark] class SerializerManager(
   // SPARK-18617: As feature in SPARK-13990 can not be applied to Spark Streaming now. The worst
   // result is streaming job based on `Receiver` mode can not run on Spark 2.x properly. It may be
   // a rational choice to close `kryo auto pick` feature for streaming in the first step.
+  // 获取单值序列化
   def getSerializer(ct: ClassTag[_], autoPick: Boolean): Serializer = {
     if (autoPick && canUseKryo(ct)) {
       kryoSerializer
@@ -99,6 +100,7 @@ private[spark] class SerializerManager(
   /**
    * Pick the best serializer for shuffling an RDD of key-value pairs.
    */
+    // 获取key-value键值的序列化器
   def getSerializer(keyClassTag: ClassTag[_], valueClassTag: ClassTag[_]): Serializer = {
     if (canUseKryo(keyClassTag) && canUseKryo(valueClassTag)) {
       kryoSerializer
