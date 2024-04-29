@@ -504,7 +504,7 @@ class SparkContext(config: SparkConf) extends Logging {
     }
 
     // 初始化spark状态追踪器
-    _statusTracker = new SparkStatusTracker(this, _statusStore)
+    _statusTracker = new SparkStatusTracker(this, _statusS  tore)
 
     _progressBar =
       if (_conf.get(UI_SHOW_CONSOLE_PROGRESS)) {

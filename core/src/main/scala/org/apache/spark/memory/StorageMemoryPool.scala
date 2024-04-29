@@ -69,7 +69,9 @@ private[memory] class StorageMemoryPool(
    *
    * @return whether all N bytes were successfully granted.
    */
+  // 为BlockId申请numBytes大小的内存
   def acquireMemory(blockId: BlockId, numBytes: Long): Boolean = lock.synchronized {
+    // 缺少的内存大小
     val numBytesToFree = math.max(0, numBytes - memoryFree)
     acquireMemory(blockId, numBytes, numBytesToFree)
   }
@@ -89,12 +91,14 @@ private[memory] class StorageMemoryPool(
     assert(numBytesToAcquire >= 0)
     assert(numBytesToFree >= 0)
     assert(memoryUsed <= poolSize)
+    // 如果缺少的内存大于0, 则调用memoryStore驱逐blocks，释放内存
     if (numBytesToFree > 0) {
       memoryStore.evictBlocksToFreeSpace(Some(blockId), numBytesToFree, memoryMode)
     }
     // NOTE: If the memory store evicts blocks, then those evictions will synchronously call
     // back into this StorageMemoryPool in order to free memory. Therefore, these variables
     // should have been updated.
+    // 如果够申请的内存，则直接累加
     val enoughMemory = numBytesToAcquire <= memoryFree
     if (enoughMemory) {
       _memoryUsed += numBytesToAcquire
@@ -102,6 +106,7 @@ private[memory] class StorageMemoryPool(
     enoughMemory
   }
 
+  // 释放size大小的内存
   def releaseMemory(size: Long): Unit = lock.synchronized {
     if (size > _memoryUsed) {
       logWarning(s"Attempted to release $size bytes of storage " +
@@ -122,11 +127,16 @@ private[memory] class StorageMemoryPool(
    *
    * @return number of bytes to be removed from the pool's capacity.
    */
+  // 释放spaceToFree大小的内存
   def freeSpaceToShrinkPool(spaceToFree: Long): Long = lock.synchronized {
+    //计算需要搜索的内存大小
     val spaceFreedByReleasingUnusedMemory = math.min(spaceToFree, memoryFree)
     val remainingSpaceToFree = spaceToFree - spaceFreedByReleasingUnusedMemory
+
+    // 如果需要收缩的内存大小 > 0
     if (remainingSpaceToFree > 0) {
       // If reclaiming free memory did not adequately shrink the pool, begin evicting blocks:
+      // 调用memoryStore收缩内存
       val spaceFreedByEviction =
         memoryStore.evictBlocksToFreeSpace(None, remainingSpaceToFree, memoryMode)
       // When a block is released, BlockManager.dropFromMemory() calls releaseMemory(), so we do
