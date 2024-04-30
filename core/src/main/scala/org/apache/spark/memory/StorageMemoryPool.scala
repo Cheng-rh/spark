@@ -69,7 +69,7 @@ private[memory] class StorageMemoryPool(
    *
    * @return whether all N bytes were successfully granted.
    */
-  // 为BlockId申请numBytes大小的内存
+  // 为BlockId申请numBytes大小的内存，如果有必要，驱逐现有的块
   def acquireMemory(blockId: BlockId, numBytes: Long): Boolean = lock.synchronized {
     // 缺少的内存大小
     val numBytesToFree = math.max(0, numBytes - memoryFree)
@@ -141,6 +141,7 @@ private[memory] class StorageMemoryPool(
         memoryStore.evictBlocksToFreeSpace(None, remainingSpaceToFree, memoryMode)
       // When a block is released, BlockManager.dropFromMemory() calls releaseMemory(), so we do
       // not need to decrement _memoryUsed here. However, we do need to decrement the pool size.
+      // 当释放一个块是，BlockManager.dropFromMemory()会调用releaseMemory()
       spaceFreedByReleasingUnusedMemory + spaceFreedByEviction
     } else {
       spaceFreedByReleasingUnusedMemory

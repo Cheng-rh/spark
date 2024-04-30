@@ -208,6 +208,7 @@ class SparkEnv (
   private[spark] def initializeMemoryManager(numUsableCores: Int): Unit = {
     Preconditions.checkState(null == memoryManager,
       "Memory manager already initialized to %s", _memoryManager)
+    //初始化UnifiedMemoryManager
     _memoryManager = UnifiedMemoryManager(conf, numUsableCores)
   }
 }
