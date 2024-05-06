@@ -420,6 +420,7 @@ object SparkEnv extends Logging {
     }
 
     // Mapping from block manager id to the block manager's information.
+    //维护了BlockManagerId 与 BlockManagerInfo 的映射关系
     val blockManagerInfo = new concurrent.TrieMap[BlockManagerId, BlockManagerInfo]()
     //初始化块管理器Master
     val blockManagerMaster = new BlockManagerMaster(

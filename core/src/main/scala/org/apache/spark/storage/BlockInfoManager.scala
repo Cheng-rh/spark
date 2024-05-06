@@ -48,13 +48,17 @@ import org.apache.spark.internal.Logging
  *                   is true for most blocks, but is false for broadcast blocks.
  */
 private[storage] class BlockInfo(
+    // 存储级别
     val level: StorageLevel,
+    // BlockInfo所描述的Block类型
     val classTag: ClassTag[_],
+    // 是否需要告知Master
     val tellMaster: Boolean) {
 
   /**
    * The size of the block (in bytes)
    */
+  // Block大小（bytes）
   def size: Long = _size
   def size_=(s: Long): Unit = {
     _size = s
@@ -65,6 +69,7 @@ private[storage] class BlockInfo(
   /**
    * The number of times that this block has been locked for reading.
    */
+  // 该Block被读取的次数
   def readerCount: Int = _readerCount
   def readerCount_=(c: Int): Unit = {
     _readerCount = c
@@ -77,6 +82,7 @@ private[storage] class BlockInfo(
    * [[BlockInfo.NON_TASK_WRITER]] if the write lock is held by non-task code, or
    * [[BlockInfo.NO_WRITER]] if this block is not locked for writing.
    */
+  // 持有当前block写锁的任务尝试ID
   def writerTask: Long = _writerTask
   def writerTask_=(t: Long): Unit = {
     _writerTask = t

@@ -53,6 +53,7 @@ class BlockManagerMasterEndpoint(
     conf: SparkConf,
     listenerBus: LiveListenerBus,
     externalBlockStoreClient: Option[ExternalBlockStoreClient],
+    // 维护了BlockManagerId 与 BlockManagerInfo 的映射关系
     blockManagerInfo: mutable.Map[BlockManagerId, BlockManagerInfo],
     mapOutputTracker: MapOutputTrackerMaster,
     private val _shuffleManager: ShuffleManager,
@@ -76,12 +77,14 @@ class BlockManagerMasterEndpoint(
     new mutable.HashMap[BlockManagerId, BlockStatusPerBlockId]
 
   // Mapping from executor ID to block manager ID.
+  //维护了 ExecutorId 与 BlockManagerId 之间的映射关系
   private val blockManagerIdByExecutor = new mutable.HashMap[String, BlockManagerId]
 
   // Set of block managers which are decommissioning
   private val decommissioningBlockManagerSet = new mutable.HashSet[BlockManagerId]
 
   // Mapping from block id to the set of block managers that have the block.
+  //维护了 BlockId 与 存储此 BlockId 的 BlockManagerId 之间的映射关系
   private val blockLocations = new JHashMap[BlockId, mutable.HashSet[BlockManagerId]]
 
   // Mapping from task id to the set of rdd blocks which are generated from the task.
