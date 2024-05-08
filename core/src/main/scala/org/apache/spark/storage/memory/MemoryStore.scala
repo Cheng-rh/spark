@@ -147,12 +147,16 @@ private[spark] class MemoryStore(
       size: Long,
       memoryMode: MemoryMode,
       _bytes: () => ChunkedByteBuffer): Boolean = {
+    //判断blockId对应的内存块是否已经在MemoryStore中存在，若存在，则中断执行并抛出异常。
     require(!contains(blockId), s"Block $blockId is already present in the MemoryStore")
+    // 申请 size 大小的内存，如果申请成功则继续写入，否则直接返回false
     if (memoryManager.acquireStorageMemory(blockId, size, memoryMode)) {
       // We acquired enough memory for the block, so go ahead and put it
       val bytes = _bytes()
       assert(bytes.size == size)
+      //将 ChunkedByteBuffer 进一步封装为 SerializedMemoryEntry
       val entry = new SerializedMemoryEntry[T](bytes, memoryMode, implicitly[ClassTag[T]])
+      // 加锁并保存到 entries 中
       entries.synchronized {
         entries.put(blockId, entry)
       }
@@ -194,21 +198,29 @@ private[spark] class MemoryStore(
     require(!contains(blockId), s"Block $blockId is already present in the MemoryStore")
 
     // Number of elements unrolled so far
+    //已经展开的元素数量
     var elementsUnrolled = 0
     // Whether there is still enough memory for us to continue unrolling this block
+    // 是否有足够的内存支持我们继续展开迭代器
     var keepUnrolling = true
     // Initial per-task memory to request for unrolling blocks (bytes).
+    // 用来展开迭代器之前初始请求的内存大小
     val initialMemoryThreshold = unrollMemoryThreshold
     // How often to check whether we need to request more memory
+    // 展开过程中进行内存检查的周期，单位是次数，默认值为16，可以通过参数 spark.storage.unrollMemoryCheckPeriod 设置
     val memoryCheckPeriod = conf.get(UNROLL_MEMORY_CHECK_PERIOD)
     // Memory currently reserved by this task for this particular unrolling operation
+    // 当前任务用于展开Block所保留的内存
     var memoryThreshold = initialMemoryThreshold
     // Memory to request as a multiple of current vector size
+    // 展开内存不足时，请求增长的因子
     val memoryGrowthFactor = conf.get(UNROLL_MEMORY_GROWTH_FACTOR)
     // Keep track of unroll memory used by this particular block / putIterator() operation
+    // Block已经使用的展开内存大小
     var unrollMemoryUsedByThisBlock = 0L
 
     // Request enough memory to begin unrolling
+    // 请求是否有足够的内存支持我们继续展开迭代器
     keepUnrolling =
       reserveUnrollMemoryForThisTask(blockId, initialMemoryThreshold, memoryMode)
 
@@ -216,6 +228,7 @@ private[spark] class MemoryStore(
       logWarning(s"Failed to reserve initial memory threshold of " +
         s"${Utils.bytesToString(initialMemoryThreshold)} for computing block $blockId in memory.")
     } else {
+      // 如果支持，将已经使用的内存更新
       unrollMemoryUsedByThisBlock += initialMemoryThreshold
     }
 
@@ -224,14 +237,21 @@ private[spark] class MemoryStore(
 
     // Unroll this block safely, checking whether we have exceeded our threshold periodically
     // and if no thread interrupts have been received.
+    // 只要有足够的展开内存，就不断迭代
     while (values.hasNext && keepUnrolling &&
       (!shouldCheckThreadInterruption || !Thread.currentThread().isInterrupted)) {
+      //向中转器valuesHolder中添加数据
       valuesHolder.storeValue(values.next())
+      // 周期性地检查
       if (elementsUnrolled % memoryCheckPeriod == 0) {
+        //查看中转器valuesHolder中的内存是否大于已分配的内存
         val currentSize = valuesHolder.estimatedSize()
         // If our vector's size has exceeded the threshold, request more memory
+        // 如果预估的内存大小大于已分配内存，则需要申请更多的内存
         if (currentSize >= memoryThreshold) {
+          // 需要申请的内存大小
           val amountToRequest = (currentSize * memoryGrowthFactor - memoryThreshold).toLong
+          // 从MemoryManager 申请摊开内存，若申请成功，在将分配的内存累加到已分配内存
           keepUnrolling =
             reserveUnrollMemoryForThisTask(blockId, amountToRequest, memoryMode)
           if (keepUnrolling) {
@@ -249,30 +269,41 @@ private[spark] class MemoryStore(
     if (shouldCheckThreadInterruption && Thread.currentThread().isInterrupted) {
       logInfo(s"Failed to unroll block=$blockId since thread interrupt was received")
       Left(unrollMemoryUsedByThisBlock)
+    // 若向memoryManager申请内存成功
     } else if (keepUnrolling) {
       // Make sure that we have enough memory to store the block. By this point, it is possible that
       // the block's actual memory usage has exceeded the unroll memory by a small amount, so we
       // perform one final call to attempt to allocate additional memory if necessary.
+      // 则从中转器valuesHolder中获取builder，并且计算准确内存开销。
       val entryBuilder = valuesHolder.getBuilder()
       val size = entryBuilder.preciseSize
+      // 查看准确内存是否大于已分配内存。
       if (size > unrollMemoryUsedByThisBlock) {
         val amountToRequest = size - unrollMemoryUsedByThisBlock
+        // 从MemoryManager 申请摊开内存
         keepUnrolling = reserveUnrollMemoryForThisTask(blockId, amountToRequest, memoryMode)
+        // 并将分配的内存累加到已分配内存中。
         if (keepUnrolling) {
           unrollMemoryUsedByThisBlock += amountToRequest
         }
       }
 
+      // 若向MemoryManager申请内存成功
       if (keepUnrolling) {
+        //先调用MemoryEntryBuilder的build方法，构建可以直接存入内存的MemoryEntry
         val entry = entryBuilder.build()
         // Synchronize so that transfer is atomic
+        //
         memoryManager.synchronized {
+          // 向MemoryManager请求释放摊开内存
           releaseUnrollMemoryForThisTask(memoryMode, unrollMemoryUsedByThisBlock)
+          // 申请存储内存，并确保存储内存申请成功。
           val success = memoryManager.acquireStorageMemory(blockId, entry.size, memoryMode)
           assert(success, "transferring unroll memory to storage memory failed")
         }
 
         entries.synchronized {
+          // 最后将数据存入内存的entries中
           entries.put(blockId, entry)
         }
 
@@ -380,6 +411,7 @@ private[spark] class MemoryStore(
   }
 
   def getBytes(blockId: BlockId): Option[ChunkedByteBuffer] = {
+    //直接根据blockId从entries中取出MemoryEntry数据
     val entry = entries.synchronized { entries.get(blockId) }
     entry match {
       case null => None
@@ -463,6 +495,14 @@ private[spark] class MemoryStore(
    * @param memoryMode the type of memory to free (on- or off-heap)
    * @return the amount of memory (in bytes) freed by eviction
    */
+
+  /**
+   * 尝试驱逐block来释放指定大小的内存空间来存储给定的block
+   * @param blockId 要分配内存的blockId
+   * @param space block大小
+   * @param memoryMode 内存类型(堆内还是堆外)
+   * @return
+   */
   private[spark] def evictBlocksToFreeSpace(
       blockId: Option[BlockId],
       space: Long,
@@ -470,6 +510,7 @@ private[spark] class MemoryStore(
     assert(space > 0)
     memoryManager.synchronized {
       var freedMemory = 0L
+      //找到block对应的rdd
       val rddToAdd = blockId.flatMap(getRddId)
       val selectedBlocks = new ArrayBuffer[BlockId]
       def blockIsEvictable(blockId: BlockId, entry: MemoryEntry[_]): Boolean = {
@@ -478,6 +519,8 @@ private[spark] class MemoryStore(
       // This is synchronized to ensure that the set of entries is not changed
       // (because of getValue or getBytes) while traversing the iterator, as that
       // can lead to exceptions.
+      //先给entries上锁，然后遍历entries集合，检查block 是否可以从内存中驱逐，
+      // 若可以则把它加入到selectedBlocks集合中，并把该block大小累加到freedMemory中。
       entries.synchronized {
         val iterator = entries.entrySet().iterator()
         while (freedMemory < space && iterator.hasNext) {
@@ -488,6 +531,8 @@ private[spark] class MemoryStore(
             // We don't want to evict blocks which are currently being read, so we need to obtain
             // an exclusive write lock on blocks which are candidates for eviction. We perform a
             // non-blocking "tryLock" here in order to ignore blocks which are locked for reading:
+            //lockForWriting 方法，不堵塞，即如果第一次拿不到写锁，则一直不停地轮询，直到可以拿到写锁为止。那么问题来了，
+            // 为什么要先获取写锁呢？因为写锁具有排他性并且不具备可重入性，一旦拿到写锁，其他锁就不能再访问该block了
             if (blockInfoManager.lockForWriting(blockId, blocking = false).isDefined) {
               selectedBlocks += blockId
               freedMemory += entry.size
@@ -513,7 +558,8 @@ private[spark] class MemoryStore(
           blockInfoManager.removeBlock(blockId)
         }
       }
-
+      // 若计划要释放的内存不小于存储新block需要的内存大小，则遍历之前选择的每一个block，获取entry，并调用dropMemory方法，
+      // 返回释放的内存大小。finally 代码块是防止在dropMemory过程中，该线程被中断，其余block写锁不能被释放的情况。
       if (freedMemory >= space) {
         var lastSuccessfulBlock = -1
         try {
@@ -548,6 +594,8 @@ private[spark] class MemoryStore(
           }
         }
       } else {
+        // 若计划要释放的内存小于存储新block需要的内存大小，则直接释放写锁，
+        // 不从内存中驱逐之前选择的block，直接返回。
         blockId.foreach { id =>
           logInfo(s"Will not store $id")
         }
@@ -600,17 +648,20 @@ private[spark] class MemoryStore(
    */
   def releaseUnrollMemoryForThisTask(memoryMode: MemoryMode, memory: Long = Long.MaxValue): Unit = {
     val taskAttemptId = currentTaskAttemptId()
+    // 先根据memoryMode获取到对应记录堆内或堆外内存的使用情况的map
     memoryManager.synchronized {
       val unrollMemoryMap = memoryMode match {
         case MemoryMode.ON_HEAP => onHeapUnrollMemoryMap
         case MemoryMode.OFF_HEAP => offHeapUnrollMemoryMap
       }
+      //然后在该task的摊开内存上减去这笔内存开销
       if (unrollMemoryMap.contains(taskAttemptId)) {
         val memoryToRelease = math.min(memory, unrollMemoryMap(taskAttemptId))
         if (memoryToRelease > 0) {
           unrollMemoryMap(taskAttemptId) -= memoryToRelease
           memoryManager.releaseUnrollMemory(memoryToRelease, memoryMode)
         }
+        //如果减完之后，task使用内存为0，则直接从map中移除对该task的内存记录
         if (unrollMemoryMap(taskAttemptId) == 0) {
           unrollMemoryMap.remove(taskAttemptId)
         }
