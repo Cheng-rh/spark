@@ -386,6 +386,7 @@ public class JavaUtils {
     int attempts = 0;
     int maxAttempts = 10;
     File dir = null;
+    // 重试10次，防止创建的目录跟已存在的目录重名。
     while (dir == null) {
       attempts += 1;
       if (attempts > maxAttempts) {

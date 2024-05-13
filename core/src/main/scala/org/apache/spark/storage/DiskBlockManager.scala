@@ -248,8 +248,10 @@ private[spark] class DiskBlockManager(
    * be deleted on JVM exit when using the external shuffle service.
    */
   private def createLocalDirs(conf: SparkConf): Array[File] = {
+    // 从配置中获取rootDir
     Utils.getConfiguredLocalDirs(conf).flatMap { rootDir =>
       try {
+        // 为每个父目录，调用Utils的createDirectory方法，在每一个子目录下创建一个以blockmgr为前缀的目录。
         val localDir = Utils.createDirectory(rootDir, "blockmgr")
         logInfo(s"Created local directory at $localDir")
         Some(localDir)

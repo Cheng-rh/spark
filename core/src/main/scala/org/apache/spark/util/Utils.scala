@@ -770,6 +770,7 @@ private[spark] object Utils
    * logic of locating the local directories according to deployment mode.
    */
   def getConfiguredLocalDirs(conf: SparkConf): Array[String] = {
+    // spark on yarn 模式，通过getYarnLocalDirs获取。
     if (isRunningInYarnContainer(conf)) {
       // If we are in yarn mode, systems can have different disk layouts so we must set it
       // to what Yarn on this system said was available. Note this assumes that Yarn has
@@ -821,8 +822,8 @@ private[spark] object Utils
 
   /** Get the Yarn approved local directories. */
   private def getYarnLocalDirs(conf: SparkConf): String = {
+    // 直接从变量"LOCAL_DIRS"中获取
     val localDirs = Option(conf.getenv("LOCAL_DIRS")).getOrElse("")
-
     if (localDirs.isEmpty) {
       throw new Exception("Yarn Local dirs can't be empty")
     }
