@@ -93,8 +93,11 @@ private[spark] class DiskBlockManager(
   // org.apache.spark.network.shuffle.ExecutorDiskUtils#getFilePath().
   def getFile(filename: String): File = {
     // Figure out which local directory it hashes to, and which subdirectory in that
+    //先根据filename即blockId的name字段生成正的hashcode（abs(hashcode)）
     val hash = Utils.nonNegativeHash(filename)
+    // dirId 是指的第几个父目录（从0开始数）
     val dirId = hash % localDirs.length
+    //subDirId是指的父目录下的第几个子目录（从0开始数）
     val subDirId = (hash / localDirs.length) % subDirsPerLocalDir
 
     // Create the subdirectory if it doesn't already exist
@@ -103,6 +106,7 @@ private[spark] class DiskBlockManager(
       if (old != null) {
         old
       } else {
+        // 如果不存在，最后拼接父子目录为一个新的父目录subDir
         val newDir = new File(localDirs(dirId), "%02x".format(subDirId))
         if (!newDir.exists()) {
           val path = newDir.toPath
@@ -120,7 +124,7 @@ private[spark] class DiskBlockManager(
         newDir
       }
     }
-
+    //然后以subDir为父目录，创建File对象，并返回之
     new File(subDir, filename)
   }
 
@@ -218,6 +222,7 @@ private[spark] class DiskBlockManager(
   }
 
   /** Produces a unique block id and File suitable for storing local intermediate results. */
+  // 创建一个临时Block，包括临时本地block获shuffle block
   def createTempLocalBlock(): (TempLocalBlockId, File) = {
     var blockId = TempLocalBlockId(UUID.randomUUID())
     while (getFile(blockId).exists()) {

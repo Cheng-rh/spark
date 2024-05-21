@@ -300,6 +300,7 @@ public class OneForOneBlockFetcher {
    * {@link StreamHandle}. We will send all fetch requests immediately, without throttling.
    */
   public void start() {
+    // 每一个block抓取成功后，都会调用currentListener对应成功方法，失败则会调用 currentListener 失败方法
     client.sendRpc(message.toByteBuffer(), new RpcResponseCallback() {
       @Override
       public void onSuccess(ByteBuffer response) {

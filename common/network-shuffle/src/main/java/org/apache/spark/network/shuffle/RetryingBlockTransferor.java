@@ -166,6 +166,7 @@ public class RetryingBlockTransferor {
     String[] blockIdsToTransfer;
     int numRetries;
     RetryingBlockTransferListener myListener;
+    //初始化需要抓取的blockId列表，已重试次数，以及currentListener
     synchronized (this) {
       blockIdsToTransfer = outstandingBlocksIds.toArray(new String[outstandingBlocksIds.size()]);
       numRetries = retryCount;
@@ -175,6 +176,7 @@ public class RetryingBlockTransferor {
     // Now initiate the transfer on all outstanding blocks, possibly initiating a retry if that
     // fails.
     try {
+      //开始抓取任务
       transferStarter.createAndStart(blockIdsToTransfer, myListener);
     } catch (Exception e) {
       logger.error(String.format("Exception while beginning %s of %s outstanding blocks %s",
